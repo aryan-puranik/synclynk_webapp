@@ -1,0 +1,18 @@
+# Server specific
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.production
+logs/
+*.log
+coverage/
+.nyc_output/
+uploads/
+temp/
+*.sqlite
+*.sqlite3
+*.db
+.DS_Store
+Thumbs.db

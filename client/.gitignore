@@ -1,0 +1,13 @@
+# Client specific
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.production
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+.vite/
+.cache/
