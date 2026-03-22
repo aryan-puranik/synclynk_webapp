@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePairing } from '../context/PairingContext';
+import { usePairing } from '../hooks/usePairing';
 import { QRCodeSVG } from 'qrcode.react';
 import axios from 'axios';
 import { FiArrowLeft, FiCamera, FiCopy, FiCheck } from 'react-icons/fi';
@@ -9,13 +9,14 @@ import toast from 'react-hot-toast';
 
 const Pair = () => {
   const navigate = useNavigate();
-  const { registerDevice, pairWithCode, paired } = usePairing();
+  const { registerDevice, pairWithCode, paired, deviceId: existingDeviceId } = usePairing();
   const [pairingCode, setPairingCode] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [manualCode, setManualCode] = useState('');
   const [copied, setCopied] = useState(false);
-  const [mode, setMode] = useState('qr'); // 'qr' or 'manual'
+  const [mode, setMode] = useState('qr');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     if (paired) {
@@ -24,18 +25,23 @@ const Pair = () => {
   }, [paired, navigate]);
 
   const generatePairingCode = async () => {
+    setIsGenerating(true);
     try {
-      const response = await axios.post(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:3000'}/api/pair`);
-      const { deviceId, pairingCode, qrCode } = response.data;
+      const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+      const response = await axios.post(`${serverUrl}/api/pair`);
+      const { deviceId: newDeviceId, pairingCode: newCode, qrCode: newQrCode } = response.data;
       
-      setDeviceId(deviceId);
-      setPairingCode(pairingCode);
-      setQrCode(qrCode);
-      registerDevice(deviceId);
+      setDeviceId(newDeviceId);
+      setPairingCode(newCode);
+      setQrCode(newQrCode);
+      registerDevice(newDeviceId);
       
       toast.success('Pairing code generated!');
     } catch (error) {
+      console.error('Generate pairing error:', error);
       toast.error('Failed to generate pairing code');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -87,9 +93,10 @@ const Pair = () => {
             
             <button
               onClick={generatePairingCode}
-              className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all text-lg font-semibold"
+              disabled={isGenerating}
+              className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Generate Pairing Code
+              {isGenerating ? 'Generating...' : 'Generate Pairing Code'}
             </button>
           </div>
         ) : (

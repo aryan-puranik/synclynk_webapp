@@ -1,15 +1,40 @@
 class InMemoryStore {
   constructor() {
-    this.pairedDevices = new Map(); // deviceId -> { socketId, pairedWith, lastSeen }
-    this.pendingPairs = new Map(); // pairingCode -> { deviceId, timestamp }
-    this.clipboardData = new Map(); // roomId -> { type, content, timestamp }
-    this.activeStreams = new Map(); // roomId -> { streamerId, viewers }
-    this.notificationSettings = new Map(); // roomId -> { apps: ['whatsapp', 'telegram', 'signal'] }
+    this.pairedDevices = new Map();
+    this.pendingPairs = new Map();
+    this.clipboardData = new Map();      // roomId -> clipboard object
+    this.clipboardHistory = new Map();    // roomId -> array of clipboard items
+    this.activeStreams = new Map();
+    this.notificationSettings = new Map();
+    this.notificationHistory = new Map();
+    this.delayedNotifications = new Map();
     
     // Cleanup old data every hour
     setInterval(() => this.cleanup(), 3600000);
   }
 
+  // Clipboard methods
+  setClipboard(roomId, data) {
+    this.clipboardData.set(roomId, data);
+  }
+
+  getClipboard(roomId) {
+    return this.clipboardData.get(roomId);
+  }
+
+  clearClipboard(roomId) {
+    this.clipboardData.delete(roomId);
+  }
+
+  setClipboardHistory(roomId, history) {
+    this.clipboardHistory.set(roomId, history);
+  }
+
+  getClipboardHistory(roomId) {
+    return this.clipboardHistory.get(roomId) || [];
+  }
+
+  // Device methods
   generatePairingCode() {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   }
@@ -21,7 +46,6 @@ class InMemoryStore {
       timestamp: Date.now()
     });
     
-    // Auto cleanup after 5 minutes
     setTimeout(() => {
       this.pendingPairs.delete(pairingCode);
     }, 300000);
@@ -39,14 +63,18 @@ class InMemoryStore {
       socketId: null,
       pairedWith: deviceId,
       roomId,
-      lastSeen: Date.now()
+      lastSeen: Date.now(),
+      isConnected: false,
+      deviceType: 'browser'
     });
     
     this.pairedDevices.set(deviceId, {
       socketId,
       pairedWith: pending.deviceId,
       roomId,
-      lastSeen: Date.now()
+      lastSeen: Date.now(),
+      isConnected: true,
+      deviceType: 'mobile'
     });
     
     this.pendingPairs.delete(pairingCode);
@@ -59,6 +87,7 @@ class InMemoryStore {
     if (device) {
       device.socketId = socketId;
       device.lastSeen = Date.now();
+      device.isConnected = true;
       this.pairedDevices.set(deviceId, device);
     }
     return device;
@@ -68,59 +97,70 @@ class InMemoryStore {
     return this.pairedDevices.get(deviceId);
   }
 
-  setClipboard(roomId, type, content) {
-    this.clipboardData.set(roomId, {
-      type,
-      content,
-      timestamp: Date.now()
-    });
+  getDeviceById(deviceId) {
+    return this.pairedDevices.get(deviceId);
   }
 
-  getClipboard(roomId) {
-    return this.clipboardData.get(roomId);
+  getDevicesInRoom(roomId) {
+    const devices = [];
+    for (const [deviceId, device] of this.pairedDevices) {
+      if (device.roomId === roomId) {
+        devices.push({
+          deviceId,
+          deviceType: device.deviceType,
+          isConnected: !!device.socketId,
+          lastSeen: device.lastSeen
+        });
+      }
+    }
+    return devices;
   }
 
+  // Stream methods
   setStream(roomId, streamerId) {
     this.activeStreams.set(roomId, {
       streamerId,
       viewers: new Set(),
-      timestamp: Date.now()
+      startedAt: Date.now(),
+      status: 'active',
+      config: { quality: '720p', audio: true, bitrate: 2500 }
     });
-  }
-
-  addViewer(roomId, viewerId) {
-    const stream = this.activeStreams.get(roomId);
-    if (stream) {
-      stream.viewers.add(viewerId);
-      return true;
-    }
-    return false;
-  }
-
-  removeViewer(roomId, viewerId) {
-    const stream = this.activeStreams.get(roomId);
-    if (stream) {
-      stream.viewers.delete(viewerId);
-      if (stream.viewers.size === 0) {
-        this.activeStreams.delete(roomId);
-      }
-      return true;
-    }
-    return false;
   }
 
   getStream(roomId) {
     return this.activeStreams.get(roomId);
   }
 
-  setNotificationSettings(roomId, apps) {
-    this.notificationSettings.set(roomId, apps);
+  removeStream(roomId) {
+    this.activeStreams.delete(roomId);
+  }
+
+  // Notification methods
+  setNotificationSettings(roomId, settings) {
+    this.notificationSettings.set(roomId, settings);
   }
 
   getNotificationSettings(roomId) {
-    return this.notificationSettings.get(roomId) || ['whatsapp', 'telegram', 'signal'];
+    return this.notificationSettings.get(roomId);
   }
 
+  setNotificationHistory(roomId, history) {
+    this.notificationHistory.set(roomId, history);
+  }
+
+  getNotificationHistory(roomId) {
+    return this.notificationHistory.get(roomId) || [];
+  }
+
+  setDelayedNotifications(roomId, delayed) {
+    this.delayedNotifications.set(roomId, delayed);
+  }
+
+  getDelayedNotifications(roomId) {
+    return this.delayedNotifications.get(roomId) || [];
+  }
+
+  // Cleanup
   cleanup() {
     const now = Date.now();
     const fiveMinutesAgo = now - 300000;
@@ -135,7 +175,7 @@ class InMemoryStore {
     
     // Cleanup inactive devices
     for (const [deviceId, data] of this.pairedDevices) {
-      if (data.lastSeen < oneHourAgo) {
+      if (data.lastSeen < oneHourAgo && !data.socketId) {
         this.pairedDevices.delete(deviceId);
       }
     }
@@ -146,7 +186,26 @@ class InMemoryStore {
         this.clipboardData.delete(roomId);
       }
     }
+    
+    // Cleanup old clipboard history
+    for (const [roomId, history] of this.clipboardHistory) {
+      const filtered = history.filter(item => item.timestamp > oneHourAgo);
+      if (filtered.length !== history.length) {
+        this.clipboardHistory.set(roomId, filtered);
+      }
+    }
+    
+    // Cleanup old notification history
+    for (const [roomId, history] of this.notificationHistory) {
+      const filtered = history.filter(n => n.timestamp > oneHourAgo);
+      if (filtered.length !== history.length) {
+        this.notificationHistory.set(roomId, filtered);
+      }
+    }
+    
+    console.log('[CLEANUP] Removed expired data');
   }
 }
 
+// Export singleton instance
 export default new InMemoryStore();

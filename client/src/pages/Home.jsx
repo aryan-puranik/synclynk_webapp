@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../hooks/useTheme'; // Import from hooks, not context
 import { FiSun, FiMoon, FiMonitor, FiSmartphone, FiCopy, FiVideo, FiBell } from 'react-icons/fi';
 
 const Home = () => {
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark, toggleTheme } = useTheme(); // Now this works correctly
 
   const features = [
     {
