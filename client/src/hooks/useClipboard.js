@@ -1,18 +1,69 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import clipboardService from '../services/clipboardService';
 import { useSocket } from './useSocket';
 import toast from 'react-hot-toast';
 
 export const useClipboard = () => {
-  const { roomId, isConnected } = useSocket();
+  const { roomId, isConnected, socket } = useSocket();
   const [clipboard, setClipboard] = useState(null);
   const [clipboardHistory, setClipboardHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
-  
+
   const lastSyncedRef = useRef('');
   const intervalRef = useRef(null);
-  const debounceTimeoutRef = useRef(null);
+  const lastReceivedRef = useRef('');
+
+  // Debug logging
+  useEffect(() => {
+    console.log('useClipboard state:', { roomId, isConnected, socketId: socket?.id });
+  }, [roomId, isConnected, socket]);
+
+  // Listen for clipboard updates and history from socket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleClipboardSync = (data) => {
+      console.log('📬 Received clipboard sync:', data);
+      setClipboard(data);
+
+      if (data.type === 'text') {
+        const incoming = data.fullContent || data.content;
+        lastReceivedRef.current = incoming;
+        lastSyncedRef.current = incoming;
+      }
+    };
+
+    const handleHistoryResponse = (history) => {
+      console.log('📜 Received history:', history);
+      setClipboardHistory(history);
+      setIsLoading(false);
+    };
+
+    const handleClipboardUpdated = ({ success, data }) => {
+      if (success && data) {
+        console.log('📬 Received clipboard update:', data);
+        setClipboard(data);
+
+        if (data.type === 'text') {
+          const incoming = data.fullContent || data.content;
+          lastReceivedRef.current = incoming;
+          lastSyncedRef.current = incoming;
+        }
+      }
+    };
+
+    // Register all socket listeners
+    socket.on('clipboard-sync', handleClipboardSync);
+    socket.on('clipboard-history-response', handleHistoryResponse);
+    socket.on('clipboard-updated', handleClipboardUpdated);
+
+    return () => {
+      // Clean up all socket listeners
+      socket.off('clipboard-sync', handleClipboardSync);
+      socket.off('clipboard-history-response', handleHistoryResponse);
+      socket.off('clipboard-updated', handleClipboardUpdated);
+    };
+  }, [socket]);
 
   // Check clipboard permission
   const checkPermission = useCallback(async () => {
@@ -39,6 +90,17 @@ export const useClipboard = () => {
     }
   }, []);
 
+  // Read from system clipboard
+  const readFromSystemClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      return text || '';
+    } catch (error) {
+      console.error('Failed to read from system clipboard:', error);
+      return null;
+    }
+  }, []);
+
   // Stop monitoring
   const stopMonitoring = useCallback(() => {
     if (intervalRef.current) {
@@ -49,102 +111,65 @@ export const useClipboard = () => {
 
   // Start clipboard monitoring
   const startMonitoring = useCallback(() => {
-    // Basic requirements for syncing
-    if (!roomId || !isConnected) return;
+    if (!roomId || !isConnected || !socket) {
+      console.log('Cannot start monitoring - missing:', {
+        roomId: !!roomId,
+        isConnected,
+        socket: !!socket
+      });
+      return;
+    }
 
-    // Avoid multiple intervals
     if (intervalRef.current) return;
 
-    let lastContent = '';
-    
+    console.log('Starting clipboard monitoring...');
+
     intervalRef.current = setInterval(async () => {
       try {
         const clipboardText = await navigator.clipboard.readText();
-        
-        if (clipboardText && clipboardText !== lastContent && clipboardText !== lastSyncedRef.current) {
-          lastContent = clipboardText;
+
+        if (
+          clipboardText &&
+          clipboardText !== lastSyncedRef.current &&
+          clipboardText !== lastReceivedRef.current
+        ) {
+          console.log('📝 Auto-sync detected new content:', clipboardText.substring(0, 50));
           lastSyncedRef.current = clipboardText;
-          await clipboardService.updateClipboard(roomId, 'text', clipboardText);
-          toast.success('Auto-synced to mobile', { icon: '🔄', duration: 1500 });
+
+          // Emit through socket
+          socket.emit('clipboard-update', {
+            roomId,
+            type: 'text',
+            content: clipboardText
+          });
+
+          // Update local state
+          setClipboard({
+            type: 'text',
+            content: clipboardText,
+            fullContent: clipboardText,
+            timestamp: Date.now()
+          });
         }
       } catch (error) {
-        // Permission might have been revoked or not yet granted
+        console.error('Monitor error:', error);
         if (error.name === 'NotAllowedError') {
           setPermissionGranted(false);
           stopMonitoring();
         }
       }
     }, 2000);
-  }, [roomId, isConnected, stopMonitoring]);
-
-  // Auto-sync when text changes in textarea (for manual input)
-  const autoSyncText = useCallback((text) => {
-    if (!roomId || !isConnected) return;
-    if (!text || text === lastSyncedRef.current) return;
-    
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    
-    debounceTimeoutRef.current = setTimeout(() => {
-      if (text !== lastSyncedRef.current) {
-        clipboardService.updateClipboard(roomId, 'text', text);
-        lastSyncedRef.current = text;
-        toast.success('Auto-synced to mobile', { icon: '🔄', duration: 1500 });
-      }
-    }, 500);
-  }, [roomId, isConnected]);
-
-  // Initialize service and listeners
-  useEffect(() => {
-    clipboardService.loadCachedHistory();
-    setClipboard(clipboardService.getCurrentClipboard());
-    setClipboardHistory(clipboardService.getHistoryList());
-
-    const handleSync = (data) => {
-      setClipboard(data);
-      if (data.type === 'text') {
-        lastSyncedRef.current = data.fullContent || data.content;
-      }
-      toast.success(`${data.type === 'text' ? 'Text' : 'Image'} synced from mobile`);
-    };
-
-    const handleHistory = (history) => {
-      setClipboardHistory(history);
-      setIsLoading(false);
-    };
-
-    const handleError = ({ message }) => {
-      toast.error(`Clipboard error: ${message}`);
-      setIsLoading(false);
-    };
-
-    const handleCleared = () => {
-      setClipboard(null);
-      toast.info('Clipboard cleared');
-    };
-
-    clipboardService.on('sync', handleSync);
-    clipboardService.on('history', handleHistory);
-    clipboardService.on('error', handleError);
-    clipboardService.on('cleared', handleCleared);
-
-    return () => {
-      clipboardService.off('sync', handleSync);
-      clipboardService.off('history', handleHistory);
-      clipboardService.off('error', handleError);
-      clipboardService.off('cleared', handleCleared);
-      stopMonitoring();
-    };
-  }, [stopMonitoring]);
+  }, [roomId, isConnected, socket, stopMonitoring]);
 
   // Automatically start monitoring when connected and permissions are available
   useEffect(() => {
     const initSync = async () => {
-      if (roomId && isConnected) {
+      if (roomId && isConnected && socket) {
         const hasPermission = await checkPermission();
         if (hasPermission) {
           startMonitoring();
+        } else {
+          console.log('No clipboard permission, waiting for user to grant');
         }
       } else {
         stopMonitoring();
@@ -152,21 +177,24 @@ export const useClipboard = () => {
     };
 
     initSync();
-    
-    return () => stopMonitoring();
-  }, [roomId, isConnected, checkPermission, startMonitoring, stopMonitoring]);
 
-  // Update clipboard
+    return () => stopMonitoring();
+  }, [roomId, isConnected, socket, checkPermission, startMonitoring, stopMonitoring]);
+
+  // Update clipboard (send to other devices)
   const updateClipboard = useCallback(async (type, content) => {
-    if (!roomId) {
+    if (!roomId || !socket) {
       toast.error('Not connected to any device');
       return false;
     }
 
     try {
-      await clipboardService.updateClipboard(roomId, type, content);
+      console.log('📤 Sending clipboard update:', { type, content: content.substring(0, 50) });
+      socket.emit('clipboard-update', { roomId, type, content });
+
       if (type === 'text') {
         lastSyncedRef.current = content;
+        setClipboard({ type, content, fullContent: content, timestamp: Date.now() });
       }
       return true;
     } catch (error) {
@@ -174,42 +202,46 @@ export const useClipboard = () => {
       toast.error('Failed to update clipboard');
       return false;
     }
-  }, [roomId]);
+  }, [roomId, socket]);
 
-  // Request clipboard from mobile
+  // Request clipboard from other device
   const requestClipboard = useCallback(async () => {
-    if (!roomId) {
+    if (!roomId || !socket) {
       toast.error('Not connected to any device');
       return;
     }
 
     setIsLoading(true);
-    await clipboardService.requestClipboard(roomId);
+    socket.emit('clipboard-request', { roomId });
     setTimeout(() => setIsLoading(false), 3000);
-  }, [roomId]);
+  }, [roomId, socket]);
 
   // Get clipboard history
   const getClipboardHistory = useCallback(async (limit = 20) => {
-    if (!roomId) return;
+    if (!roomId || !socket) return;
     setIsLoading(true);
-    await clipboardService.getHistory(roomId, limit);
-  }, [roomId]);
+    socket.emit('clipboard-history', { roomId, limit });
+    // History will come back via socket event
+    setTimeout(() => setIsLoading(false), 3000);
+  }, [roomId, socket]);
 
   // Clear clipboard
   const clearClipboard = useCallback(async () => {
-    if (!roomId) return;
-    await clipboardService.clearClipboard(roomId);
-  }, [roomId]);
+    if (!roomId || !socket) return;
+    socket.emit('clipboard-clear', { roomId });
+  }, [roomId, socket]);
 
   // Copy to system clipboard
   const copyToSystemClipboard = useCallback(async (text) => {
-    const success = await clipboardService.copyToSystemClipboard(text);
-    if (success) {
+    try {
+      await navigator.clipboard.writeText(text);
       toast.success('Copied to system clipboard');
-    } else {
+      return true;
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
       toast.error('Failed to copy to clipboard');
+      return false;
     }
-    return success;
   }, []);
 
   return {
@@ -222,8 +254,8 @@ export const useClipboard = () => {
     getClipboardHistory,
     clearClipboard,
     copyToSystemClipboard,
-    autoSyncText,
     checkPermission,
-    requestPermission
+    requestPermission,
+    readFromSystemClipboard
   };
 };

@@ -12,18 +12,21 @@ class ClipboardService {
   setupSocketListeners() {
     // Listen for clipboard sync events
     socketService.on('clipboard-sync', (data) => {
+      console.log('Received clipboard-sync:', data); //for debugging
       this.clipboardData = data;
       this.addToHistory(data);
       this.emitEvent('sync', data);
     });
 
     socketService.on('clipboard-updated', ({ success, data }) => {
-      if (success) {
-        this.clipboardData = data;
-        this.addToHistory(data);
-        this.emitEvent('updated', data);
-      }
-    });
+    console.log('✅ Received clipboard-updated event:', { success, data });
+    if (success) {
+      this.clipboardData = data;
+      this.addToHistory(data);
+      this.emitEvent('sync', data); // Emit sync event for consistency
+      this.emitEvent('updated', data);
+    }
+  });
 
     socketService.on('clipboard-error', ({ message }) => {
       this.emitEvent('error', { message });
@@ -47,7 +50,7 @@ class ClipboardService {
   addToHistory(data) {
     // Add to history, keep last 50 items
     this.clipboardHistory = [data, ...this.clipboardHistory].slice(0, 50);
-    
+
     // Save to local storage
     storageService.setItem('clipboardHistory', this.clipboardHistory.slice(0, 20));
   }
@@ -57,7 +60,7 @@ class ClipboardService {
     if (!roomId) {
       throw new Error('No active room');
     }
-    
+
     socketService.updateClipboard(roomId, type, content);
     return true;
   }
@@ -67,7 +70,7 @@ class ClipboardService {
     if (!roomId) {
       throw new Error('No active room');
     }
-    
+
     socketService.requestClipboard(roomId);
   }
 
@@ -76,7 +79,7 @@ class ClipboardService {
     if (!roomId) {
       throw new Error('No active room');
     }
-    
+
     socketService.getClipboardHistory(roomId, limit);
   }
 
@@ -85,7 +88,7 @@ class ClipboardService {
     if (!roomId) {
       throw new Error('No active room');
     }
-    
+
     socketService.clearClipboard(roomId);
   }
 
@@ -114,7 +117,7 @@ class ClipboardService {
   async readFromSystemClipboard() {
     try {
       const text = await navigator.clipboard.readText();
-      return text;
+      return text || '';
     } catch (error) {
       console.error('Failed to read from system clipboard:', error);
       return null;

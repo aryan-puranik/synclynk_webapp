@@ -132,6 +132,7 @@ class SocketService {
 
   // Clipboard operations
   updateClipboard(roomId, type, content) {
+     console.log('📤 Sending to server:', { roomId, type, content: content.substring(0, 50) });
     return this.emit('clipboard-update', { roomId, type, content });
   }
 
