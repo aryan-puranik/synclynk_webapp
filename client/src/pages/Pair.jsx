@@ -1,22 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { usePairing } from '../context/PairingContext';
-import { QRCodeSVG } from 'qrcode.react';
+import { useNavigate, Link } from 'react-router-dom';
+import { usePairing } from '../hooks/usePairing';
 import axios from 'axios';
 import { FiArrowLeft, FiCamera, FiCopy, FiCheck } from 'react-icons/fi';
-import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const Pair = () => {
   const navigate = useNavigate();
-  const { registerDevice, pairWithCode, paired } = usePairing();
+  const { registerDevice, pairWithCode, paired, isConnected } = usePairing();
   const [pairingCode, setPairingCode] = useState('');
-  const [deviceId, setDeviceId] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [manualCode, setManualCode] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [mode, setMode] = useState('qr'); // 'qr' or 'manual'
+  const [mode, setMode] = useState('qr');
+  const [isGenerating, setIsGenerating] = useState(false);
 
+  // Navigate only when the PairingContext confirms the handshake is complete
   useEffect(() => {
     if (paired) {
       navigate('/dashboard');
@@ -24,18 +22,29 @@ const Pair = () => {
   }, [paired, navigate]);
 
   const generatePairingCode = async () => {
+    if (!isConnected) {
+      return toast.error('Waiting for server connection...');
+    }
+    
+    setIsGenerating(true);
     try {
-      const response = await axios.post(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:3000'}/api/pair`);
-      const { deviceId, pairingCode, qrCode } = response.data;
+      const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+      const response = await axios.post(`${serverUrl}/api/pair`);
+      const { deviceId: newDeviceId, pairingCode: newCode, qrCode: newQrCode } = response.data;
       
-      setDeviceId(deviceId);
-      setPairingCode(pairingCode);
-      setQrCode(qrCode);
-      registerDevice(deviceId);
+      // Update local UI states
+      setPairingCode(newCode);
+      setQrCode(newQrCode);
+      
+      // Register with context (triggers socket emit without restarting connection)
+      registerDevice(newDeviceId);
       
       toast.success('Pairing code generated!');
     } catch (error) {
+      console.error('Pairing error:', error);
       toast.error('Failed to generate pairing code');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -47,154 +56,51 @@ const Pair = () => {
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(pairingCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success('Code copied to clipboard');
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
+      <div className="max-w-md w-full">
         <div className="flex items-center mb-8">
-          <Link
-            to="/"
-            className="p-2 rounded-lg bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mr-4"
-          >
+          <Link to="/" className="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-sm mr-4 text-gray-600 dark:text-gray-300">
             <FiArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Pair Your Devices
-          </h1>
+          <h1 className="text-2xl font-bold dark:text-white">Pair Devices</h1>
         </div>
 
         {!pairingCode ? (
-          // Initial state - generate QR
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
-            <div className="w-24 h-24 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <FiCamera className="w-10 h-10 text-white" />
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center border border-gray-100 dark:border-gray-700">
+            <div className="w-20 h-20 bg-blue-500/10 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <FiCamera className="w-10 h-10" />
             </div>
-            
-            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
-              Ready to Connect?
-            </h2>
-            
-            <p className="text-gray-600 dark:text-gray-300 mb-8 max-w-md mx-auto">
-              Generate a QR code and scan it with your SYNCLYNK mobile app to establish a secure connection.
-            </p>
-            
+            <h2 className="text-xl font-bold mb-2 dark:text-white">Ready to Sync?</h2>
+            <p className="text-gray-500 dark:text-gray-400 mb-8 text-sm">Generate a code to link your phone.</p>
             <button
               onClick={generatePairingCode}
-              className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all text-lg font-semibold"
+              disabled={isGenerating || !isConnected}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all disabled:opacity-50"
             >
-              Generate Pairing Code
+              {isGenerating ? 'Generating...' : 'Generate QR Code'}
             </button>
           </div>
         ) : (
-          // Show QR code and manual code
-          <div className="space-y-6">
-            {/* Mode Toggle */}
-            <div className="flex gap-4 justify-center">
-              <button
-                onClick={() => setMode('qr')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  mode === 'qr'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                }`}
-              >
-                QR Code
-              </button>
-              <button
-                onClick={() => setMode('manual')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  mode === 'manual'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                }`}
-              >
-                Manual Code
-              </button>
-            </div>
-
-            {mode === 'qr' ? (
-              // QR Code View
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-                <div className="flex flex-col items-center">
-                  <div className="bg-white p-4 rounded-xl mb-6">
-                    <img src={qrCode} alt="Pairing QR Code" className="w-64 h-64" />
-                  </div>
-                  
-                  <p className="text-gray-600 dark:text-gray-300 mb-4 text-center">
-                    Scan this QR code with your SYNCLYNK mobile app
-                  </p>
-                  
-                  <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-lg">
-                    <span className="text-2xl font-mono font-bold text-gray-800 dark:text-gray-200">
-                      {pairingCode}
-                    </span>
-                    <button
-                      onClick={copyToClipboard}
-                      className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                    >
-                      {copied ? (
-                        <FiCheck className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <FiCopy className="w-5 h-5 text-gray-500" />
-                      )}
-                    </button>
-                  </div>
-                  
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                    Code expires in 5 minutes
-                  </p>
+          <div className="space-y-4 animate-in fade-in duration-500">
+             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 flex flex-col items-center border border-gray-100 dark:border-gray-700">
+                <div className="bg-white p-4 rounded-xl mb-4 border border-gray-100">
+                  <img src={qrCode} alt="QR Code" className="w-48 h-48" />
                 </div>
-              </div>
-            ) : (
-              // Manual Code Entry
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 text-center">
-                  Enter Pairing Code
-                </h3>
-                
-                <div className="max-w-xs mx-auto">
-                  <input
-                    type="text"
-                    value={manualCode}
-                    onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                    placeholder="Enter 6-digit code"
-                    maxLength={6}
-                    className="w-full px-4 py-3 text-center text-2xl font-mono bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:border-blue-500 dark:focus:border-blue-400 outline-none text-gray-900 dark:text-white mb-4"
-                  />
-                  
-                  <button
-                    onClick={handleManualPair}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all font-medium"
-                  >
-                    Pair Device
-                  </button>
-                  
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 text-center">
-                    Enter the code shown on your mobile device
-                  </p>
+                <div className="bg-gray-100 dark:bg-gray-700 px-6 py-3 rounded-xl mb-4">
+                  <span className="text-3xl font-mono font-bold tracking-widest text-gray-800 dark:text-white">
+                    {pairingCode}
+                  </span>
                 </div>
-              </div>
-            )}
-            
-            {/* Instructions */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6">
-              <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
-                How to pair:
-              </h4>
-              <ol className="list-decimal list-inside space-y-2 text-blue-700 dark:text-blue-200">
-                <li>Open SYNCLYNK app on your mobile device</li>
-                <li>Tap on "Scan QR Code" or "Enter Code"</li>
-                <li>Scan the QR code above or enter the manual code</li>
-                <li>Wait for automatic pairing confirmation</li>
-              </ol>
-            </div>
+                <p className="text-sm text-gray-500 text-center px-4">
+                  Scan this QR code or enter the code manually in the SYNCLYNK mobile app.
+                </p>
+             </div>
+             <div className="text-center">
+                <button onClick={() => setPairingCode('')} className="text-sm text-blue-500 font-medium">
+                  Generate new code
+                </button>
+             </div>
           </div>
         )}
       </div>
