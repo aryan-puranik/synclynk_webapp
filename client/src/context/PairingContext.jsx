@@ -1,8 +1,7 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
 
-// Create and export the context
 export const PairingContext = createContext(null);
 
 export const PairingProvider = ({ children }) => {
@@ -12,134 +11,90 @@ export const PairingProvider = ({ children }) => {
   const [paired, setPaired] = useState(false);
   const [clipboard, setClipboard] = useState(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [viewerCount, setViewerCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
 
+  // 1. Initialize socket once and keep it stable
   useEffect(() => {
     const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
     const newSocket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000
     });
 
     newSocket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('[Socket] Web connected:', newSocket.id);
       setIsConnected(true);
-      
-      if (deviceId) {
-        newSocket.emit('register-device', { 
-          deviceId, 
-          deviceType: 'browser' 
-        });
-      }
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
-      setIsConnected(false);
-    });
+    newSocket.on('disconnect', () => setIsConnected(false));
 
-    newSocket.on('paired', ({ roomId: newRoomId }) => {
+    // Handle pairing events from server
+    const handlePaired = ({ roomId: newRoomId }) => {
+      console.log('[Socket] Pairing successful. Room:', newRoomId);
       setRoomId(newRoomId);
       setPaired(true);
       localStorage.setItem('roomId', newRoomId);
-      toast.success('Devices paired successfully!');
-    });
+      toast.success('Connected to mobile device!');
+    };
 
-    newSocket.on('paired-success', ({ roomId: newRoomId }) => {
-      setRoomId(newRoomId);
-      setPaired(true);
-      localStorage.setItem('roomId', newRoomId);
-      toast.success('Paired with mobile device!');
-    });
+    newSocket.on('paired', handlePaired);
+    newSocket.on('paired-success', handlePaired);
 
-    newSocket.on('pairing-error', ({ message }) => {
-      toast.error(message);
-    });
+    newSocket.on('pairing-error', ({ message }) => toast.error(message));
 
     newSocket.on('clipboard-sync', (data) => {
       setClipboard(data);
       toast.success(`${data.type === 'text' ? 'Text' : 'Image'} synced!`);
     });
 
-    newSocket.on('notification', (notification) => {
-      setNotifications(prev => [notification, ...prev].slice(0, 10));
-      toast.success(`${notification.app}: ${notification.title}`);
-    });
-
-    newSocket.on('stream-started', () => {
-      toast.success('Mobile device started streaming');
+    newSocket.on('stream-started', (data) => {
+      setIsStreaming(true);
+      if (data?.viewerCount !== undefined) setViewerCount(data.viewerCount);
+      toast.success('Mobile stream started');
     });
 
     newSocket.on('stream-stopped', () => {
       setIsStreaming(false);
-      toast('Stream ended');
+      setViewerCount(0);
     });
 
-    newSocket.on('peer-disconnected', ({ deviceType }) => {
-      toast.error(`${deviceType === 'mobile' ? 'Mobile device' : 'Browser'} disconnected`);
+    newSocket.on('peer-disconnected', () => {
       setPaired(false);
-      setRoomId(null);
-      localStorage.removeItem('roomId');
+      toast.error('Mobile device disconnected');
     });
 
     setSocket(newSocket);
+    return () => { newSocket.close(); };
+  }, []); // Empty dependency array ensures socket doesn't restart
 
-    return () => {
-      newSocket.close();
-    };
-  }, []);
+  // 2. Handle device registration separately to avoid socket restarts
+  useEffect(() => {
+    if (socket && isConnected && deviceId) {
+      console.log('[Socket] Registering device:', deviceId);
+      socket.emit('register-device', { deviceId, deviceType: 'browser' });
+    }
+  }, [socket, isConnected, deviceId]);
 
-  const registerDevice = (newDeviceId) => {
+  const registerDevice = useCallback((newDeviceId) => {
     setDeviceId(newDeviceId);
     localStorage.setItem('deviceId', newDeviceId);
-    socket?.emit('register-device', { 
-      deviceId: newDeviceId, 
-      deviceType: 'browser' 
-    });
-  };
+  }, []);
 
   const pairWithCode = (pairingCode) => {
-    if (!deviceId) {
-      toast.error('Please generate a pairing code first');
-      return;
-    }
-    socket?.emit('pair-with-code', { pairingCode, deviceId });
+    if (!socket || !deviceId) return toast.error('Connection not ready');
+    socket.emit('pair-with-code', { pairingCode, deviceId });
   };
 
   const updateClipboard = (type, content) => {
-    if (roomId && socket) {
-      socket.emit('clipboard-update', { roomId, type, content });
-      setClipboard({ type, content, timestamp: Date.now() });
-    }
+    if (roomId && socket) socket.emit('clipboard-update', { roomId, type, content });
   };
 
   const requestClipboard = () => {
-    if (roomId && socket) {
-      socket.emit('clipboard-request', { roomId });
-    }
-  };
-
-  const startStream = () => {
-    if (roomId && socket) {
-      socket.emit('start-stream', { roomId });
-      setIsStreaming(true);
-    }
-  };
-
-  const stopStream = () => {
-    if (roomId && socket) {
-      socket.emit('stop-stream', { roomId });
-      setIsStreaming(false);
-    }
-  };
-
-  const sendNotification = (notification) => {
-    if (roomId && socket) {
-      socket.emit('notification', { roomId, notification });
-    }
+    if (roomId && socket) socket.emit('clipboard-request', { roomId });
   };
 
   const value = {
@@ -150,19 +105,13 @@ export const PairingProvider = ({ children }) => {
     paired,
     clipboard,
     isStreaming,
+    viewerCount,
     notifications,
     registerDevice,
     pairWithCode,
     updateClipboard,
     requestClipboard,
-    startStream,
-    stopStream,
-    sendNotification
   };
 
-  return (
-    <PairingContext.Provider value={value}>
-      {children}
-    </PairingContext.Provider>
-  );
+  return <PairingContext.Provider value={value}>{children}</PairingContext.Provider>;
 };
