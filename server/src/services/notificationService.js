@@ -2,7 +2,11 @@ import store from '../utils/inMemoryStore.js';
 
 class NotificationService {
   constructor() {
-    this.supportedApps = ['whatsapp', 'telegram', 'signal', 'discord', 'slack', 'messenger', 'instagram', 'twitter'];
+    this.supportedApps = [
+      'com.whatsapp', 'com.whatsapp.w4b', 'com.instagram.android', 
+      'com.facebook.katana', 'com.facebook.orca', 'org.telegram.messenger',
+      'com.google.android.gm', 'com.discord', 'com.slack'
+    ];
     this.maxNotifications = 100;
   }
 
@@ -44,13 +48,17 @@ class NotificationService {
         }
       }
 
+      // 5. Build the Final Payload
       const notificationData = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        ...notification,
+        // Use ID from app if provided, otherwise generate
+        id: notification.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        app: notification.app,           // e.g., "com.whatsapp"
+        appName: notification.appName,   // e.g., "WhatsApp"
+        title: notification.title,
+        body: notification.body,         // Use 'body' to match the mobile app's field
+        timestamp: notification.timestamp || Date.now(),
         senderId,
-        timestamp: Date.now(),
         read: false,
-        priority: notification.priority || 'normal',
         deliveredAt: Date.now()
       };
 
@@ -67,6 +75,19 @@ class NotificationService {
       console.error('Send notification error:', error);
       throw error;
     }
+  }
+
+  validateNotification(notification) {
+    if (!notification.app) {
+      return { valid: false, error: 'Package name (app) is required' };
+    }
+    
+    // Check 'body' instead of 'message' to match the app's MirroredNotification
+    if (!notification.title && !notification.body) {
+      return { valid: false, error: 'Notification must have a title or body' };
+    }
+    
+    return { valid: true };
   }
 
   timeToMinutes(timeStr) {

@@ -1,3 +1,4 @@
+// src/hooks/useNotifications.js
 import { useState, useCallback, useEffect, useRef } from 'react';
 import socketService from '../services/socketService';
 import storageService from '../services/storageService';
@@ -9,11 +10,20 @@ export const useNotifications = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Package names are now used as IDs to match the Android app
   const [settings, setSettings] = useState(() => {
     const savedSettings = storageService.getItem('notificationSettings');
     return savedSettings || {
       enabled: true,
-      apps: ['whatsapp', 'telegram', 'signal', 'discord', 'slack', 'messenger'],
+      apps: [
+        'com.whatsapp', 
+        'com.whatsapp.w4b', 
+        'org.telegram.messenger', 
+        'com.discord', 
+        'com.slack', 
+        'com.facebook.orca'
+      ],
       doNotDisturb: false,
       dndStart: '22:00',
       dndEnd: '08:00',
@@ -25,25 +35,26 @@ export const useNotifications = () => {
 
   // FIX: Use a ref to give socket handlers always-current access to settings and
   // notifications without them needing to be in the useEffect dependency array.
-  // This prevents listener re-registration on every state change.
   const settingsRef = useRef(settings);
   const notificationsRef = useRef(notifications);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { notificationsRef.current = notifications; }, [notifications]);
 
-  // Supported apps list
+  // Supported apps list updated with Android package names
   const supportedApps = [
-    { id: 'whatsapp',   name: 'WhatsApp',   icon: '💬', color: '#25D366' },
-    { id: 'telegram',   name: 'Telegram',   icon: '✈️', color: '#26A5E4' },
-    { id: 'signal',     name: 'Signal',     icon: '🔒', color: '#3A76F0' },
-    { id: 'discord',    name: 'Discord',    icon: '🎮', color: '#5865F2' },
-    { id: 'slack',      name: 'Slack',      icon: '💼', color: '#4A154B' },
-    { id: 'messenger',  name: 'Messenger',  icon: '💬', color: '#0084FF' },
-    { id: 'instagram',  name: 'Instagram',  icon: '📸', color: '#E4405F' },
-    { id: 'twitter',    name: 'Twitter',    icon: '🐦', color: '#1DA1F2' }
+    { id: 'com.whatsapp',                      name: 'WhatsApp',          icon: '💬', color: '#25D366' },
+    { id: 'com.whatsapp.w4b',                  name: 'WhatsApp Business', icon: '💼', color: '#075E54' },
+    { id: 'org.telegram.messenger',            name: 'Telegram',          icon: '✈️', color: '#26A5E4' },
+    { id: 'com.discord',                       name: 'Discord',           icon: '🎮', color: '#5865F2' },
+    { id: 'com.slack',                         name: 'Slack',             icon: '💼', color: '#4A154B' },
+    { id: 'com.facebook.orca',                 name: 'Messenger',         icon: '🔵', color: '#0084FF' },
+    { id: 'com.instagram.android',             name: 'Instagram',         icon: '📸', color: '#E4405F' },
+    { id: 'com.twitter.android',               name: 'X (Twitter)',       icon: '🐦', color: '#1DA1F2' },
+    { id: 'com.google.android.gm',             name: 'Gmail',             icon: '✉️', color: '#D44638' },
+    { id: 'com.google.android.apps.messaging', name: 'Messages',          icon: '💬', color: '#1A73E8' }
   ];
 
-  // ─── Helpers (defined before useEffect so they are available inside it) ────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   const parseTimeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
@@ -63,7 +74,11 @@ export const useNotifications = () => {
 
   const getAppName = (appId) => {
     const app = supportedApps.find(a => a.id === appId);
-    return app ? app.name : appId.charAt(0).toUpperCase() + appId.slice(1);
+    if (app) return app.name;
+    // Fallback logic: Capitalize last segment of package name
+    const parts = appId.split('.');
+    const last = parts[parts.length - 1];
+    return last ? last.charAt(0).toUpperCase() + last.slice(1) : appId;
   };
 
   const getAppIcon = (appId) => {
@@ -79,17 +94,15 @@ export const useNotifications = () => {
   // ─── Socket event handlers & effect ──────────────────────────────────────
 
   useEffect(() => {
-    // FIX: guard on socket and roomId only — settings/notifications are read
-    // via refs so they never need to be dependencies here.
     if (!socket || !roomId) return;
 
     socketService.getNotificationSettings(roomId);
     socketService.getNotifications(roomId, { limit: 50 });
 
     const handleNotification = (notification) => {
-      // FIX: read current settings from the ref, not a stale closure value
       const currentSettings = settingsRef.current;
 
+      // DND Check
       if (currentSettings.doNotDisturb) {
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
@@ -98,6 +111,7 @@ export const useNotifications = () => {
         if (currentTime >= dndStart && currentTime < dndEnd) return;
       }
 
+      // App filtering check using package name
       if (
         currentSettings.apps.length > 0 &&
         !currentSettings.apps.includes(notification.app)
@@ -105,6 +119,7 @@ export const useNotifications = () => {
         return;
       }
 
+      // Updated: Use 'body' instead of 'message' to match native payload
       setNotifications(prev => [notification, ...prev].slice(0, 100));
       setUnreadCount(prev => prev + 1);
 
@@ -112,13 +127,11 @@ export const useNotifications = () => {
         playNotificationSound();
       }
 
-      // FIX: JSX is not valid in a .js file — use toast() with a plain string.
-      // If you need the rich UI card, either rename this file to .jsx or render
-      // the card from a separate .jsx component and pass it in as a prop/context.
+      // Toast remains plain string for .js compatibility
       if (currentSettings.showPreview) {
         toast(
           `${getAppName(notification.app)}: ${notification.title}${
-            notification.message ? ` — ${notification.message}` : ''
+            notification.body ? ` — ${notification.body}` : ''
           }`,
           { duration: 5000, icon: getAppIcon(notification.app) }
         );
@@ -160,10 +173,9 @@ export const useNotifications = () => {
         setNotifications(prev =>
           prev.map(n => n.app === app ? { ...n, read: true, readAt: Date.now() } : n)
         );
-        // FIX: compute removedCount from the ref, not the stale closure snapshot
         const count = notificationsRef.current.filter(n => n.app === app && !n.read).length;
         setUnreadCount(prev => Math.max(0, prev - count));
-        toast.success(`${app} notifications marked as read`);
+        toast.success(`${getAppName(app)} notifications marked as read`);
       } else {
         setNotifications(prev =>
           prev.map(n => ({ ...n, read: true, readAt: Date.now() }))
@@ -176,12 +188,11 @@ export const useNotifications = () => {
     const handleNotificationsCleared = ({ app }) => {
       if (app) {
         setNotifications(prev => prev.filter(n => n.app !== app));
-        // FIX: read from ref so removedCount is accurate, not frozen at mount
         const removedCount = notificationsRef.current.filter(
           n => n.app === app && !n.read
         ).length;
         setUnreadCount(prev => Math.max(0, prev - removedCount));
-        toast.success(`${app} notifications cleared`);
+        toast.success(`${getAppName(app)} notifications cleared`);
       } else {
         setNotifications([]);
         setUnreadCount(0);
@@ -199,7 +210,7 @@ export const useNotifications = () => {
       toast.info(enabled ? 'Do Not Disturb mode enabled' : 'Do Not Disturb mode disabled');
     };
 
-    // Register all listeners once
+    // Register all listeners
     socket.on('notification',               handleNotification);
     socket.on('notification-settings',      handleSettingsUpdate);
     socket.on('notifications-history',      handleNotificationsHistory);
@@ -223,8 +234,6 @@ export const useNotifications = () => {
       socket.off('notifications-cleared',     handleNotificationsCleared);
       socket.off('notification-dnd-status',   handleDNDStatus);
     };
-  // FIX: only re-run when the socket connection itself changes — settings and
-  // notifications are accessed via refs and must NOT be listed here.
   }, [socket, roomId]);
 
   // ─── Public API ───────────────────────────────────────────────────────────
@@ -269,12 +278,13 @@ export const useNotifications = () => {
     socket.emit('notification-dnd-toggle', { roomId, enabled, startTime, endTime });
   }, [socket, roomId]);
 
-  const sendTestNotification = useCallback(async (app = 'whatsapp') => {
+  const sendTestNotification = useCallback(async (app = 'com.whatsapp') => {
     if (!socket || !roomId) return;
     socketService.sendNotification(roomId, {
       app,
+      appName: getAppName(app),
       title: 'Test Notification',
-      message: 'This is a test notification from SYNCLYNK',
+      body: 'This is a test notification from SYNCLYNK',
       priority: 'high',
       timestamp: Date.now()
     });
@@ -294,7 +304,7 @@ export const useNotifications = () => {
     for (const notification of unreadInApp) {
       await markAsRead(notification.id);
     }
-    toast.success(`Cleared unread ${app} notifications`);
+    toast.success(`Cleared unread ${getAppName(app)} notifications`);
   }, [notifications, markAsRead]);
 
   return {
