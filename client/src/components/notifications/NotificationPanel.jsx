@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { FiBell, FiSettings, FiTrash2, FiCheck, FiFilter } from 'react-icons/fi';
 import NotificationItem from './NotificationItem';
 import NotificationSettings from './NotificationSettings';
@@ -11,74 +11,71 @@ const NotificationPanel = () => {
     markAsRead,
     markAllAsRead,
     clearNotifications,
-    getNotificationCount
+    getNotificationCount,
+    supportedApps
   } = useNotifications();
   
   const [showSettings, setShowSettings] = useState(false);
-  const [filter, setFilter] = useState('all'); // all, unread, whatsapp, telegram, etc.
+  const [filter, setFilter] = useState('all');
 
   const filteredNotifications = notifications.filter(notification => {
     if (filter === 'unread') return !notification.read;
-    if (filter === 'whatsapp') return notification.app === 'whatsapp';
-    if (filter === 'telegram') return notification.app === 'telegram';
-    if (filter === 'signal') return notification.app === 'signal';
-    return true;
+    if (filter === 'all') return true;
+    return notification.app === filter; // Filters by package name ID
   });
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden border border-gray-100 dark:border-gray-700">
       {/* Header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 p-4">
+      <div className="border-b border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
-            <FiBell className="w-6 h-6 text-blue-500" />
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Notifications
+            <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">
+              <FiBell className="w-5 h-5 text-red-500" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+              Notification Feed
             </h2>
             {unreadCount > 0 && (
-              <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                {unreadCount}
+              <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {unreadCount} NEW
               </span>
             )}
           </div>
           
-          <div className="flex space-x-2">
+          <div className="flex space-x-1">
             <button
-              onClick={markAllAsRead}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              title="Mark all as read"
+              onClick={() => markAllAsRead()}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-500"
+              title="Mark all read"
             >
-              <FiCheck className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <FiCheck className="w-4 h-4" />
             </button>
-            
             <button
               onClick={() => clearNotifications()}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-500"
               title="Clear all"
             >
-              <FiTrash2 className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <FiTrash2 className="w-4 h-4" />
             </button>
-            
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-blue-50 text-blue-500' : 'text-gray-500 hover:bg-gray-100'}`}
               title="Settings"
             >
-              <FiSettings className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <FiSettings className="w-4 h-4" />
             </button>
           </div>
         </div>
         
-        {/* Filters */}
-        <div className="flex items-center space-x-2 overflow-x-auto">
-          <FiFilter className="w-4 h-4 text-gray-400" />
+        {/* Dynamic App Filters */}
+        <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-hide">
+          <FiFilter className="w-3 h-3 text-gray-400 flex-shrink-0" />
           
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-              filter === 'all'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              filter === 'all' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-gray-100 dark:bg-gray-700 text-gray-600'
             }`}
           >
             All
@@ -86,67 +83,48 @@ const NotificationPanel = () => {
           
           <button
             onClick={() => setFilter('unread')}
-            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-              filter === 'unread'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              filter === 'unread' ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-gray-100 dark:bg-gray-700 text-gray-600'
             }`}
           >
             Unread ({unreadCount})
           </button>
-          
-          <button
-            onClick={() => setFilter('whatsapp')}
-            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-              filter === 'whatsapp'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-            }`}
-          >
-            WhatsApp ({getNotificationCount('whatsapp')})
-          </button>
-          
-          <button
-            onClick={() => setFilter('telegram')}
-            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-              filter === 'telegram'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-            }`}
-          >
-            Telegram ({getNotificationCount('telegram')})
-          </button>
-          
-          <button
-            onClick={() => setFilter('signal')}
-            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-              filter === 'signal'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-            }`}
-          >
-            Signal ({getNotificationCount('signal')})
-          </button>
+
+          {supportedApps.map(app => {
+            const count = getNotificationCount(app.id);
+            if (count === 0 && filter !== app.id) return null; // Hide empty app filters unless active
+            return (
+              <button
+                key={app.id}
+                onClick={() => setFilter(app.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center space-x-1 ${
+                  filter === app.id ? 'text-white shadow-md' : 'bg-gray-100 dark:bg-gray-700 text-gray-600'
+                }`}
+                style={filter === app.id ? { backgroundColor: app.color, boxShadow: `0 4px 12px ${app.color}40` } : {}}
+              >
+                <span>{app.icon}</span>
+                <span>{app.name} ({count})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
       
-      {/* Settings Panel */}
       {showSettings && (
-        <div className="border-b border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900">
+        <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
           <NotificationSettings />
         </div>
       )}
       
-      {/* Notifications List */}
-      <div className="max-h-96 overflow-y-auto">
+      <div className="max-h-[500px] overflow-y-auto">
         {filteredNotifications.length === 0 ? (
-          <div className="text-center py-12">
-            <FiBell className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-500 dark:text-gray-400">
-              No notifications yet
-            </p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-              Notifications from messaging apps will appear here
+          <div className="text-center py-20 px-6">
+            <div className="bg-gray-50 dark:bg-gray-900 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <FiBell className="w-8 h-8 text-gray-300" />
+            </div>
+            <p className="text-gray-900 dark:text-white font-bold">No notifications found</p>
+            <p className="text-sm text-gray-500 mt-1 max-w-[200px] mx-auto">
+              Notifications from your paired device will appear here in real-time.
             </p>
           </div>
         ) : (

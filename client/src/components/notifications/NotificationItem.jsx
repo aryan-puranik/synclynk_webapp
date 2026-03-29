@@ -1,19 +1,14 @@
 import React from 'react';
-import { FiCheck, FiBell, FiMessageCircle, FiMail, FiTwitter, FiInstagram } from 'react-icons/fi';
-
-const appIcons = {
-  whatsapp: FiMessageCircle,
-  telegram: FiMessageCircle,
-  signal: FiMessageCircle,
-  discord: FiMessageCircle,
-  slack: FiMail,
-  messenger: FiMessageCircle,
-  instagram: FiInstagram,
-  twitter: FiTwitter
-};
+import { FiCheck, FiBell } from 'react-icons/fi';
+import { useNotifications } from '../../hooks/useNotifications';
 
 const NotificationItem = ({ notification, onMarkAsRead }) => {
-  const Icon = appIcons[notification.app] || FiBell;
+  const { getAppName, getAppIcon, getAppColor } = useNotifications();
+  
+  // Retrieve consistent metadata from the hook
+  const appName = getAppName(notification.app);
+  const appIcon = getAppIcon(notification.app);
+  const appColor = getAppColor(notification.app);
   
   const getTimeAgo = (timestamp) => {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -26,42 +21,43 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
   };
 
   return (
-    <div className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+    <div className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${!notification.read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
       <div className="flex items-start space-x-3">
+        {/* Dynamic App Icon and Color */}
         <div className="flex-shrink-0">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-            !notification.read ? 'bg-blue-100 dark:bg-blue-900' : 'bg-gray-100 dark:bg-gray-700'
-          }`}>
-            <Icon className={`w-5 h-5 ${
-              !notification.read ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
-            }`} />
+          <div 
+            className="w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm"
+            style={{ backgroundColor: `${appColor}15`, border: `1px solid ${appColor}30` }}
+          >
+            <span style={{ color: appColor }}>{appIcon}</span>
           </div>
         </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">
-              {notification.app.charAt(0).toUpperCase() + notification.app.slice(1)}
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: appColor }}>
+              {appName}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase">
               {getTimeAgo(notification.timestamp)}
             </p>
           </div>
           
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white mb-0.5">
             {notification.title}
           </p>
           
-          {notification.message && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              {notification.message}
+          {/* Changed 'message' to 'body' to match native payload */}
+          {notification.body && (
+            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
+              {notification.body}
             </p>
           )}
           
           {!notification.read && (
             <button
               onClick={() => onMarkAsRead(notification.id)}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center space-x-1 mt-1"
+              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1 mt-2"
             >
               <FiCheck className="w-3 h-3" />
               <span>Mark as read</span>

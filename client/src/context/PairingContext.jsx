@@ -8,93 +8,132 @@ export const PairingProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [deviceId, setDeviceId] = useState(localStorage.getItem('deviceId'));
   const [roomId, setRoomId] = useState(localStorage.getItem('roomId'));
+  
+  // REVERTED: Initialize paired to false to require a fresh scan/handshake
   const [paired, setPaired] = useState(false);
+  
   const [clipboard, setClipboard] = useState(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
 
-  // 1. Initialize socket once and keep it stable
   useEffect(() => {
     const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
     const newSocket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
 
     newSocket.on('connect', () => {
-      console.log('[Socket] Web connected:', newSocket.id);
+      console.log('Socket connected');
       setIsConnected(true);
+      
+      // REVERTED: Register only when connection is established
+      if (deviceId) {
+        newSocket.emit('register-device', { 
+          deviceId, 
+          deviceType: 'browser' 
+        });
+      }
     });
 
-    newSocket.on('disconnect', () => setIsConnected(false));
+    newSocket.on('disconnect', () => {
+      setIsConnected(false);
+    });
 
-    // Handle pairing events from server
+    // Handle pairing events
     const handlePaired = ({ roomId: newRoomId }) => {
-      console.log('[Socket] Pairing successful. Room:', newRoomId);
       setRoomId(newRoomId);
       setPaired(true);
       localStorage.setItem('roomId', newRoomId);
-      toast.success('Connected to mobile device!');
+      toast.success('Devices paired successfully!');
     };
 
     newSocket.on('paired', handlePaired);
     newSocket.on('paired-success', handlePaired);
 
-    newSocket.on('pairing-error', ({ message }) => toast.error(message));
+    newSocket.on('pairing-error', ({ message }) => {
+      toast.error(message);
+    });
 
     newSocket.on('clipboard-sync', (data) => {
       setClipboard(data);
       toast.success(`${data.type === 'text' ? 'Text' : 'Image'} synced!`);
     });
 
-    newSocket.on('stream-started', (data) => {
+    newSocket.on('stream-started', () => {
       setIsStreaming(true);
-      if (data?.viewerCount !== undefined) setViewerCount(data.viewerCount);
-      toast.success('Mobile stream started');
+      toast.success('Mobile device started streaming');
     });
 
     newSocket.on('stream-stopped', () => {
       setIsStreaming(false);
       setViewerCount(0);
+      toast('Stream ended');
     });
 
     newSocket.on('peer-disconnected', () => {
-      setPaired(false);
       toast.error('Mobile device disconnected');
+      setPaired(false);
+      setRoomId(null);
+      localStorage.removeItem('roomId');
     });
 
     setSocket(newSocket);
     return () => { newSocket.close(); };
-  }, []); // Empty dependency array ensures socket doesn't restart
+  }, [deviceId]);
 
-  // 2. Handle device registration separately to avoid socket restarts
-  useEffect(() => {
-    if (socket && isConnected && deviceId) {
-      console.log('[Socket] Registering device:', deviceId);
-      socket.emit('register-device', { deviceId, deviceType: 'browser' });
-    }
-  }, [socket, isConnected, deviceId]);
-
-  const registerDevice = useCallback((newDeviceId) => {
+  const registerDevice = (newDeviceId) => {
     setDeviceId(newDeviceId);
     localStorage.setItem('deviceId', newDeviceId);
-  }, []);
-
-  const pairWithCode = (pairingCode) => {
-    if (!socket || !deviceId) return toast.error('Connection not ready');
-    socket.emit('pair-with-code', { pairingCode, deviceId });
+    socket?.emit('register-device', { 
+      deviceId: newDeviceId, 
+      deviceType: 'browser' 
+    });
   };
 
+  const pairWithCode = (pairingCode) => {
+    if (!deviceId) {
+      toast.error('Please generate a pairing code first');
+      return;
+    }
+    socket?.emit('pair-with-code', { pairingCode, deviceId });
+  };
+
+  // Keep the working disconnect fix
+  const disconnect = useCallback(() => {
+    setPaired(false);
+    setRoomId(null);
+    localStorage.removeItem('roomId');
+    toast.success('Disconnected successfully');
+  }, []);
+
   const updateClipboard = (type, content) => {
-    if (roomId && socket) socket.emit('clipboard-update', { roomId, type, content });
+    if (roomId && socket) {
+      socket.emit('clipboard-update', { roomId, type, content });
+      setClipboard({ type, content, timestamp: Date.now() });
+    }
   };
 
   const requestClipboard = () => {
     if (roomId && socket) socket.emit('clipboard-request', { roomId });
+  };
+
+  const startStream = () => {
+    if (roomId && socket) {
+      socket.emit('start-stream', { roomId });
+      setIsStreaming(true);
+    }
+  };
+
+  const stopStream = () => {
+    if (roomId && socket) {
+      socket.emit('stop-stream', { roomId });
+      setIsStreaming(false);
+    }
   };
 
   const value = {
@@ -106,11 +145,13 @@ export const PairingProvider = ({ children }) => {
     clipboard,
     isStreaming,
     viewerCount,
-    notifications,
     registerDevice,
     pairWithCode,
+    disconnect,
     updateClipboard,
     requestClipboard,
+    startStream,
+    stopStream
   };
 
   return <PairingContext.Provider value={value}>{children}</PairingContext.Provider>;

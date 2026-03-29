@@ -3,12 +3,16 @@ import { io } from 'socket.io-client';
 class SocketService {
   constructor() {
     this.socket = null;
-    this.listeners = new Map();
+    this.listeners = new Map(); // Stores local callbacks for React hooks
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
   }
 
+  /**
+   * Initializes the socket connection with the server.
+   * Uses environment variables for the URL with a local fallback.
+   */
   connect(serverUrl = null) {
     const url = serverUrl || import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
     
@@ -30,6 +34,9 @@ class SocketService {
     return this.socket;
   }
 
+  /**
+   * Maps native socket.io events to internal 'emitEvent' calls to notify React components.
+   */
   setupEventHandlers() {
     if (!this.socket) return;
 
@@ -58,12 +65,19 @@ class SocketService {
       this.emitEvent('reconnected', { attemptNumber });
     });
 
+    // Custom Synclynk pairing event
+    this.socket.on('paired', (data) => {
+      this.emitEvent('paired', data);
+    });
+
     this.socket.on('pong', (data) => {
       this.emitEvent('pong', data);
     });
   }
 
-  // Register event listener
+  // ─── EVENT SYSTEM ──────────────────────────────────────────────────────────
+
+  // Register local listener
   on(event, callback) {
     if (!this.socket) return;
     
@@ -74,7 +88,7 @@ class SocketService {
     this.socket.on(event, callback);
   }
 
-  // Remove event listener
+  // Remove local listener
   off(event, callback) {
     if (!this.socket) return;
     
@@ -84,7 +98,7 @@ class SocketService {
     }
   }
 
-  // Emit event
+  // Generic emit with connection check
   emit(event, data) {
     if (!this.socket || !this.isConnected) {
       console.warn(`Cannot emit ${event}: socket not connected`);
@@ -94,7 +108,7 @@ class SocketService {
     return true;
   }
 
-  // Emit event with acknowledgment
+  // Emit with a Promise-based acknowledgment
   emitWithAck(event, data, timeout = 5000) {
     return new Promise((resolve, reject) => {
       if (!this.socket || !this.isConnected) {
@@ -113,26 +127,27 @@ class SocketService {
     });
   }
 
-  // Internal method to emit events to local listeners
+  // Notifies internal service listeners without sending to server
   emitEvent(event, data) {
     if (this.listeners.has(event)) {
       this.listeners.get(event).forEach(callback => callback(data));
     }
   }
 
-  // Register device
+  // ─── DEVICE & PAIRING ──────────────────────────────────────────────────────
+
   registerDevice(deviceId, deviceType = 'browser') {
     return this.emit('register-device', { deviceId, deviceType });
   }
 
-  // Pair with code
   pairWithCode(pairingCode, deviceId) {
     return this.emit('pair-with-code', { pairingCode, deviceId });
   }
 
-  // Clipboard operations
+  // ─── CLIPBOARD FEATURES ───────────────────────────────────────────────────
+
   updateClipboard(roomId, type, content) {
-     console.log('📤 Sending to server:', { roomId, type, content: content.substring(0, 50) });
+    console.log('📤 Syncing clipboard:', { roomId, type, content: content.substring(0, 50) });
     return this.emit('clipboard-update', { roomId, type, content });
   }
 
@@ -148,7 +163,8 @@ class SocketService {
     return this.emit('clipboard-clear', { roomId });
   }
 
-  // Stream operations
+  // ─── STREAM FEATURES ──────────────────────────────────────────────────────
+
   startStream(roomId, config = {}) {
     return this.emit('start-stream', { roomId, ...config });
   }
@@ -165,7 +181,7 @@ class SocketService {
     return this.emit('stop-viewing', { roomId });
   }
 
-  // WebRTC signaling
+  // WebRTC signaling for camera mirroring
   sendOffer(roomId, offer) {
     return this.emit('webrtc-offer', { roomId, offer });
   }
@@ -178,12 +194,17 @@ class SocketService {
     return this.emit('webrtc-ice-candidate', { roomId, candidate });
   }
 
-  // Notification operations
+  // ─── NOTIFICATION FEATURES ────────────────────────────────────────────────
+
+  /**
+   * Sends notification to peer. Payload uses 'body' to match native app.
+   */
   sendNotification(roomId, notification) {
     return this.emit('notification', { roomId, notification });
   }
 
   updateNotificationSettings(roomId, settings) {
+    // Note: Server handler uses roomId from internal session, but we pass settings object
     return this.emit('notification-settings-update', settings);
   }
 
@@ -203,7 +224,8 @@ class SocketService {
     return this.emit('notifications-clear', { roomId, app });
   }
 
-  // Connection management
+  // ─── CONNECTION MANAGEMENT ────────────────────────────────────────────────
+
   ping() {
     return this.emit('ping');
   }
@@ -226,6 +248,5 @@ class SocketService {
   }
 }
 
-// Create and export singleton instance
 const socketService = new SocketService();
 export default socketService;
