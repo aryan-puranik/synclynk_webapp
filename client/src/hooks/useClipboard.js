@@ -110,56 +110,46 @@ export const useClipboard = () => {
   }, []);
 
   // Start clipboard monitoring
-  const startMonitoring = useCallback(() => {
-    if (!roomId || !isConnected || !socket) {
-      console.log('Cannot start monitoring - missing:', {
-        roomId: !!roomId,
-        isConnected,
-        socket: !!socket
-      });
-      return;
-    }
+const startMonitoring = useCallback(() => {
+  if (!roomId || !isConnected || !socket || intervalRef.current) return;
 
-    if (intervalRef.current) return;
+  intervalRef.current = setInterval(async () => {
+    // Only attempt read if the window is active to prevent NotAllowedError
+    if (!document.hasFocus()) return; 
 
-    console.log('Starting clipboard monitoring...');
+    try {
+      const clipboardText = await navigator.clipboard.readText();
 
-    intervalRef.current = setInterval(async () => {
-      try {
-        const clipboardText = await navigator.clipboard.readText();
+      // Check if content is actually different from our tracking refs
+      if (
+        clipboardText && 
+        clipboardText !== lastSyncedRef.current && 
+        clipboardText !== lastReceivedRef.current
+      ) {
+        console.log('✨ Auto-syncing new local content');
+        lastSyncedRef.current = clipboardText; // Update tracking immediately
 
-        if (
-          clipboardText &&
-          clipboardText !== lastSyncedRef.current &&
-          clipboardText !== lastReceivedRef.current
-        ) {
-          console.log('📝 Auto-sync detected new content:', clipboardText.substring(0, 50));
-          lastSyncedRef.current = clipboardText;
+        socket.emit('clipboard-update', {
+          roomId,
+          type: 'text',
+          content: clipboardText
+        });
 
-          // Emit through socket
-          socket.emit('clipboard-update', {
-            roomId,
-            type: 'text',
-            content: clipboardText
-          });
-
-          // Update local state
-          setClipboard({
-            type: 'text',
-            content: clipboardText,
-            fullContent: clipboardText,
-            timestamp: Date.now()
-          });
-        }
-      } catch (error) {
-        console.error('Monitor error:', error);
-        if (error.name === 'NotAllowedError') {
-          setPermissionGranted(false);
-          stopMonitoring();
-        }
+        setClipboard({
+          type: 'text',
+          content: clipboardText,
+          fullContent: clipboardText,
+          timestamp: Date.now()
+        });
       }
-    }, 2000);
-  }, [roomId, isConnected, socket, stopMonitoring]);
+    } catch (error) {
+      // Ignore focus-related errors instead of killing the monitor
+      if (error.name !== 'NotAllowedError') {
+        console.error('Monitor read error:', error);
+      }
+    }
+  }, 2000);
+}, [roomId, isConnected, socket]);
 
   // Automatically start monitoring when connected and permissions are available
   useEffect(() => {

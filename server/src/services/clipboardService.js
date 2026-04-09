@@ -13,6 +13,15 @@ class ClipboardService {
         throw new Error(validated.error);
       }
 
+      // 2. DEDUPLICATION CHECK: Get current clipboard to see if content changed
+    const currentClipboard = store.getClipboard(roomId);
+    if (currentClipboard && 
+        currentClipboard.type === type && 
+        currentClipboard.fullContent === content) {
+      console.log(`[CLIPBOARD SERVICE] Ignoring duplicate content for room ${roomId}`);
+      return currentClipboard; // Return existing data instead of creating a new one
+    }
+
       // Create clipboard data object
       const clipboardData = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -28,11 +37,16 @@ class ClipboardService {
       store.setClipboard(roomId, clipboardData);
       
       // Update history
-      const history = store.getClipboardHistory(roomId) || [];
-      history.unshift(clipboardData);
-      store.setClipboardHistory(roomId, history.slice(0, this.maxHistorySize));
+      
+      const history = [...(store.getClipboardHistory(roomId) || [])];
       
       console.log(`[CLIPBOARD SERVICE] Updated in room ${roomId}: ${type} - ${clipboardData.id}`);
+
+      // Final safety check: Ensure this specific content isn't already the first item
+    if (history.length === 0 || history[0].fullContent !== content) {
+      history.unshift(clipboardData);
+      store.setClipboardHistory(roomId, history.slice(0, this.maxHistorySize));
+    }
       
       return clipboardData;
     } catch (error) {

@@ -32,10 +32,7 @@ function isOriginAllowed(origin) {
 
 const io = new Server(httpServer, {
   cors: {
-    origin: (origin, callback) => {
-      if (isOriginAllowed(origin)) callback(null, true)
-      else callback(new Error(`CORS blocked: ${origin}`))
-    },
+    origin: "*",
     methods: ['GET', 'POST'],
     credentials: true,
   },
