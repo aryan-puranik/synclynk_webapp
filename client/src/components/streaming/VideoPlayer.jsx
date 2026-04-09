@@ -1,7 +1,7 @@
 import React, { forwardRef, useState, useRef, useEffect } from 'react';
-import { 
-  FiMaximize, FiMinimize, FiVolume2, FiVolumeX, 
-  FiPlay, FiPause 
+import {
+  FiMaximize, FiMinimize, FiVolume2, FiVolumeX,
+  FiPlay, FiPause
 } from 'react-icons/fi';
 
 const VideoPlayer = forwardRef(({ stream, className = "", autoPlay = true, isLive = false }, ref) => {
@@ -10,14 +10,37 @@ const VideoPlayer = forwardRef(({ stream, className = "", autoPlay = true, isLiv
   const [isPlaying, setIsPlaying] = useState(true);
   const [volume, setVolume] = useState(1);
   const containerRef = useRef(null);
+  const [isLandscape, setIsLandscape] = useState(true);
 
   // Sync internal state with the video element when ref changes
   useEffect(() => {
-    if (ref.current) {
-      ref.current.muted = isMuted;
-      ref.current.volume = volume;
+  if (!ref || typeof ref !== 'object') return;
+
+  const video = ref.current;
+  if (!video) return;
+
+  try {
+    // Attach stream safely
+    if (stream && video.srcObject !== stream) {
+      video.srcObject = stream;
     }
-  }, [ref, isMuted, volume]);
+
+    // Apply audio settings
+    video.muted = isMuted;
+    video.volume = volume;
+
+    // Ensure playback
+    if (autoPlay && video.paused) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
+      }
+    }
+
+  } catch (err) {
+    console.error('Video setup error:', err);
+  }
+}, [stream, isMuted, volume, autoPlay]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -44,18 +67,20 @@ const VideoPlayer = forwardRef(({ stream, className = "", autoPlay = true, isLiv
   };
 
   return (
-    <div 
-      ref={containerRef} 
-      className={`relative group bg-black rounded-lg overflow-hidden border border-gray-800 ${className}`}
+    <div
+      ref={containerRef}
+      className={`relative group bg-black overflow-hidden border border-gray-800 
+  ${isLandscape ? 'h-[80vh]' : 'h-[60vh]'} 
+  ${className}`}
     >
       <video
         ref={ref}
         autoPlay={autoPlay}
         playsInline
-        className="w-full h-full object-contain cursor-pointer"
+        className="w-full h-full object-cover cursor-pointer"
         onClick={togglePlay}
       />
-      
+
       {/* Media Controls Overlay */}
       {stream && (
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -64,7 +89,7 @@ const VideoPlayer = forwardRef(({ stream, className = "", autoPlay = true, isLiv
               <button onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors">
                 {isPlaying ? <FiPause className="w-5 h-5" /> : <FiPlay className="w-5 h-5" />}
               </button>
-              
+
               <div className="flex items-center space-x-2 group/vol">
                 <button onClick={() => setIsMuted(!isMuted)} className="text-white hover:text-blue-400 transition-colors">
                   {isMuted || volume === 0 ? <FiVolumeX className="w-5 h-5" /> : <FiVolume2 className="w-5 h-5" />}
@@ -80,7 +105,7 @@ const VideoPlayer = forwardRef(({ stream, className = "", autoPlay = true, isLiv
                 />
               </div>
             </div>
-            
+
             <button onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition-colors">
               {isFullscreen ? <FiMinimize className="w-5 h-5" /> : <FiMaximize className="w-5 h-5" />}
             </button>

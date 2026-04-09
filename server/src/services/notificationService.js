@@ -2,10 +2,17 @@ import store from '../utils/inMemoryStore.js';
 
 class NotificationService {
   constructor() {
+    // UPDATED: Use full package names to match Android app emission
     this.supportedApps = [
-      'com.whatsapp', 'com.whatsapp.w4b', 'com.instagram.android', 
-      'com.facebook.katana', 'com.facebook.orca', 'org.telegram.messenger',
-      'com.google.android.gm', 'com.discord', 'com.slack'
+      'com.whatsapp', 
+      'com.whatsapp.w4b', 
+      'org.telegram.messenger', 
+      'com.discord', 
+      'com.slack', 
+      'com.facebook.orca', 
+      'com.instagram.android', 
+      'com.google.android.gm',
+      'com.google.android.apps.messaging'
     ];
     this.maxNotifications = 100;
   }
@@ -34,31 +41,31 @@ class NotificationService {
           const dndEnd = this.timeToMinutes(settings.dndEnd);
           
           if (currentTime >= dndStart && currentTime < dndEnd) {
-            // Store for later delivery
             this.storeDelayedNotification(roomId, notification);
             return { delivered: false, reason: 'do_not_disturb', delayed: true };
           }
         }
       }
 
-      // Check if app is allowed
+      // Check if app is allowed (using package name)
       if (settings && settings.apps && settings.apps.length > 0) {
+        // notification.app is 'com.google.android.gm'
         if (!settings.apps.includes(notification.app.toLowerCase())) {
           return { delivered: false, reason: 'app_not_allowed' };
         }
       }
 
-      // 5. Build the Final Payload
       const notificationData = {
-        // Use ID from app if provided, otherwise generate
+        // Generate unique ID if not provided by native app
         id: notification.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        app: notification.app,           // e.g., "com.whatsapp"
-        appName: notification.appName,   // e.g., "WhatsApp"
+        app: notification.app,
+        appName: notification.appName,
         title: notification.title,
-        body: notification.body,         // Use 'body' to match the mobile app's field
-        timestamp: notification.timestamp || Date.now(),
+        body: notification.body, // Use 'body' to match native payload
         senderId,
+        timestamp: notification.timestamp || Date.now(),
         read: false,
+        priority: notification.priority || 'normal',
         deliveredAt: Date.now()
       };
 
@@ -77,19 +84,6 @@ class NotificationService {
     }
   }
 
-  validateNotification(notification) {
-    if (!notification.app) {
-      return { valid: false, error: 'Package name (app) is required' };
-    }
-    
-    // Check 'body' instead of 'message' to match the app's MirroredNotification
-    if (!notification.title && !notification.body) {
-      return { valid: false, error: 'Notification must have a title or body' };
-    }
-    
-    return { valid: true };
-  }
-
   timeToMinutes(timeStr) {
     const [hours, minutes] = timeStr.split(':').map(Number);
     return hours * 60 + minutes;
@@ -106,19 +100,17 @@ class NotificationService {
 
   validateNotification(notification) {
     if (!notification.app) {
-      return { valid: false, error: 'App name is required' };
+      return { valid: false, error: 'App package name is required' };
     }
     
+    // Check against package name whitelist
     if (!this.supportedApps.includes(notification.app.toLowerCase())) {
-      return { valid: false, error: `Unsupported app: ${notification.app}` };
+      return { valid: false, error: `Unsupported app package: ${notification.app}` };
     }
     
-    if (!notification.title || notification.title.length > 100) {
-      return { valid: false, error: 'Title must be between 1-100 characters' };
-    }
-    
-    if (notification.message && notification.message.length > 500) {
-      return { valid: false, error: 'Message must be less than 500 characters' };
+    // Check for title or body (Gmail often has one or both)
+    if (!notification.title && !notification.body) {
+      return { valid: false, error: 'Notification must have a title or body' };
     }
     
     return { valid: true };
@@ -141,10 +133,10 @@ class NotificationService {
     const settings = store.getNotificationSettings(roomId);
     return settings || {
       enabled: true,
-      apps: this.supportedApps,
+      apps: this.supportedApps, // Default to all supported package names
       doNotDisturb: false,
-      dndStart: null,
-      dndEnd: null,
+      dndStart: '22:00',
+      dndEnd: '08:00',
       showPreview: true,
       soundEnabled: true
     };

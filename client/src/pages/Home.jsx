@@ -31,6 +31,7 @@ const Home = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
+              
               <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-xl">S</span>
               </div>
@@ -38,7 +39,7 @@ const Home = () => {
                 SYNCLYNK
               </span>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <button
                 onClick={toggleTheme}
@@ -46,7 +47,7 @@ const Home = () => {
               >
                 {isDark ? <FiSun className="w-5 h-5" /> : <FiMoon className="w-5 h-5" />}
               </button>
-              
+
               <Link
                 to="/pair"
                 className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all font-medium"
@@ -67,12 +68,12 @@ const Home = () => {
               Seamlessly
             </span>
           </h1>
-          
+
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto">
-            Experience the future of device connectivity with SYNCLYNK. 
+            Experience the future of device connectivity with SYNCLYNK.
             Universal clipboard, live video streaming, and notification mirroring.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/pair"
@@ -80,7 +81,7 @@ const Home = () => {
             >
               Start Pairing
             </Link>
-            
+
             <div className="px-8 py-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl flex items-center justify-center gap-2">
               <FiSmartphone className="w-5 h-5" />
               <span>No login required</span>
@@ -95,7 +96,7 @@ const Home = () => {
           <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
             Powerful Features
           </h2>
-          
+
           <div className="grid md:grid-cols-3 gap-8">
             {features.map((feature, index) => (
               <div
@@ -123,7 +124,7 @@ const Home = () => {
           <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
             How It Works
           </h2>
-          
+
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1 text-center">
               <div className="w-16 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
@@ -136,11 +137,11 @@ const Home = () => {
                 Open SYNCLYNK on your mobile and scan the QR code
               </p>
             </div>
-            
+
             <div className="text-gray-300 dark:text-gray-600 text-4xl hidden md:block">
               →
             </div>
-            
+
             <div className="flex-1 text-center">
               <div className="w-16 h-16 bg-purple-500 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
                 2
@@ -152,11 +153,11 @@ const Home = () => {
                 Devices pair automatically without any login
               </p>
             </div>
-            
+
             <div className="text-gray-300 dark:text-gray-600 text-4xl hidden md:block">
               →
             </div>
-            
+
             <div className="flex-1 text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
                 3

@@ -30,7 +30,7 @@ const StreamViewer = ({ isStreamActive, viewerCount }) => {
           ref={videoRef} 
           stream={remoteStream} 
           isLive={isStreaming}
-          className="aspect-video" 
+          className="w-full h-[70vh] md:h-[80vh]" 
         />
 
         {/* JOIN LIVE FEED OVERLAY */}

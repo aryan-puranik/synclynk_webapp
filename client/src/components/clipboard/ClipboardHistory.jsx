@@ -79,10 +79,12 @@ const ClipboardHistory = () => {
     return type === 'text' ? <FiFileText className="w-5 h-5" /> : <FiImage className="w-5 h-5" />;
   };
 
-  const filteredHistory = history.filter(item => {
-    if (filter === 'all') return true;
-    return item.type === filter;
-  });
+  const filteredHistory = history
+  .filter(item => filter === 'all' ? true : item.type === filter)
+  // Deduplicate by ID to prevent the React Key Error
+  .filter((item, index, self) => 
+    index === self.findIndex((t) => t.id === item.id)
+  );
 
   if (isLoading) {
     return (

@@ -3,32 +3,34 @@ import clipboardService from '../services/clipboardService.js';
 export default function(socket, io, getRoomId) {
   
   socket.on('clipboard-update', async ({ type, content, roomId: providedRoomId }) => {
-    const roomId = providedRoomId || getRoomId();
-    if (!roomId) {
-      socket.emit('clipboard-error', { message: 'No active room' });
-      return;
-    }
+  const roomId = providedRoomId || getRoomId();
+  if (!roomId) return socket.emit('clipboard-error', { message: 'No active room' });
+  
+  try {
+    // Get existing clipboard to compare before updating
+    const existing = await clipboardService.getClipboard(roomId);
     
-    try {
-      const clipboardData = await clipboardService.updateClipboard(
-        roomId, 
-        type, 
-        content, 
-        socket.deviceId
-      );
-      
-      // Broadcast to all devices in the room except sender
+    const clipboardData = await clipboardService.updateClipboard(
+      roomId, 
+      type, 
+      content, 
+      socket.deviceId
+    );
+    
+    // ONLY broadcast if it's truly new content (different ID or timestamp)
+    if (!existing || existing.id !== clipboardData.id) {
       socket.to(roomId).emit('clipboard-sync', clipboardData);
-      
-      // Also send back to sender for confirmation
       socket.emit('clipboard-updated', { success: true, data: clipboardData });
-      
-      console.log(`[CLIPBOARD HANDLER] Updated in room ${roomId} by ${socket.deviceType}`);
-    } catch (error) {
-      console.error('[CLIPBOARD HANDLER] Update error:', error);
-      socket.emit('clipboard-error', { message: error.message });
+      console.log(`[CLIPBOARD HANDLER] New content in room ${roomId} from ${socket.deviceType}`);
+    } else {
+      // Quietly acknowledge to the sender without broadcasting to everyone
+      socket.emit('clipboard-updated', { success: true, data: clipboardData, isDuplicate: true });
     }
-  });
+  } catch (error) {
+    console.error('[CLIPBOARD HANDLER] Update error:', error);
+    socket.emit('clipboard-error', { message: error.message });
+  }
+});
   
   socket.on('clipboard-request', async ({ roomId: providedRoomId } = {}) => {
     const roomId = providedRoomId || getRoomId();
