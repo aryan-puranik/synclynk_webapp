@@ -8,10 +8,10 @@ export const PairingProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [deviceId, setDeviceId] = useState(localStorage.getItem('deviceId'));
   const [roomId, setRoomId] = useState(localStorage.getItem('roomId'));
-  
+
   // REVERTED: Initialize paired to false to require a fresh scan/handshake
   const [paired, setPaired] = useState(false);
-  
+
   const [clipboard, setClipboard] = useState(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
@@ -30,12 +30,12 @@ export const PairingProvider = ({ children }) => {
     newSocket.on('connect', () => {
       console.log('Socket connected');
       setIsConnected(true);
-      
+
       // REVERTED: Register only when connection is established
       if (deviceId) {
-        newSocket.emit('register-device', { 
-          deviceId, 
-          deviceType: 'browser' 
+        newSocket.emit('register-device', {
+          deviceId,
+          deviceType: 'browser'
         });
       }
     });
@@ -89,9 +89,9 @@ export const PairingProvider = ({ children }) => {
   const registerDevice = (newDeviceId) => {
     setDeviceId(newDeviceId);
     localStorage.setItem('deviceId', newDeviceId);
-    socket?.emit('register-device', { 
-      deviceId: newDeviceId, 
-      deviceType: 'browser' 
+    socket?.emit('register-device', {
+      deviceId: newDeviceId,
+      deviceType: 'browser'
     });
   };
 
@@ -103,13 +103,25 @@ export const PairingProvider = ({ children }) => {
     socket?.emit('pair-with-code', { pairingCode, deviceId });
   };
 
-  // Keep the working disconnect fix
+
   const disconnect = useCallback(() => {
+    // 1. Notify server to kill the session in its Maps
+    if (socket) {
+      socket.emit('manual-disconnect', { deviceId, roomId });
+      socket.disconnect(); // Explicitly close the socket
+    }
+
+    // 2. Reset React State
     setPaired(false);
     setRoomId(null);
+    setDeviceId(null); // Clear local state
+
+    // 3. Clear Storage - This prevents the "Auto-Rejoin" on refresh
     localStorage.removeItem('roomId');
+    localStorage.removeItem('deviceId');
+
     toast.success('Disconnected successfully');
-  }, []);
+  }, [socket, deviceId, roomId]);
 
   const updateClipboard = (type, content) => {
     if (roomId && socket) {

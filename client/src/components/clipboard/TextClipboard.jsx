@@ -95,11 +95,18 @@ useEffect(() => {
       {/* Text Area */}
       <div className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900 p-4' : ''}`}>
         <textarea
-          value={text}
-          readOnly
-          placeholder="Type or paste content here..."
-          className={`w-full border rounded-lg ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-64'} p-4`}
-        />
+  value={text}
+  readOnly
+  placeholder="Type or paste content here..."
+  className={`w-full border rounded-lg 
+    ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-64'} 
+    p-4 
+    bg-white dark:bg-gray-800 
+    text-gray-900 dark:text-white 
+    placeholder-gray-400 dark:placeholder-gray-500
+    border-gray-300 dark:border-gray-700
+  `}
+/>
 
         <div className="absolute bottom-2 right-2 text-xs">
           {charCount} characters

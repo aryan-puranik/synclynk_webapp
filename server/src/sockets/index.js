@@ -6,7 +6,7 @@ import notificationHandler from './notificationHandler.js';
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
-    
+
     let currentDeviceId = null;
     let currentRoomId = null;
 
@@ -15,41 +15,41 @@ export function setupSocketHandlers(io) {
       currentDeviceId = deviceId;
       socket.deviceId = deviceId;
       socket.deviceType = deviceType;
-      
+
       const device = store.updateSocketId(deviceId, socket.id);
-      
+
       if (device && device.roomId) {
         currentRoomId = device.roomId;
         socket.join(device.roomId);
         socket.emit('paired', { roomId: device.roomId });
         console.log(`[REGISTER] ${deviceType} re-joined room ${device.roomId}`);
-        
+
         // Send initial data
         sendInitialData(socket, device.roomId);
       }
-      
+
       console.log(`[REGISTER] ${deviceType} registered: ${deviceId}`);
     });
 
     // Pairing
     socket.on('pair-with-code', ({ pairingCode, deviceId }) => {
       const roomId = store.pairDevices(pairingCode, deviceId, socket.id);
-      
+
       if (roomId) {
         currentRoomId = roomId;
         currentDeviceId = deviceId;
         socket.join(roomId);
         socket.deviceId = deviceId;
-        
+
         const pairedDevice = store.getPairedDevice(deviceId);
         if (pairedDevice && pairedDevice.socketId) {
           io.to(pairedDevice.socketId).emit('paired', { roomId });
           console.log(`[PAIR] Browser notified of pairing: room ${roomId}`);
         }
-        
+
         socket.emit('paired-success', { roomId });
         console.log(`[PAIR] Mobile paired successfully: room ${roomId}`);
-        
+
         sendInitialData(socket, roomId);
       } else {
         socket.emit('pairing-error', { message: 'Invalid or expired pairing code' });
@@ -61,47 +61,62 @@ export function setupSocketHandlers(io) {
     clipboardHandler(socket, io, () => currentRoomId);
     streamHandler(socket, io, () => currentRoomId);
     notificationHandler(socket, io, () => currentRoomId);
-    
+
     // Ping/Pong for connection health
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
     });
-    
+
     // Disconnect
     socket.on('disconnect', () => {
       console.log(`[WS] Client disconnected: ${socket.id} (${socket.deviceType})`);
-      
-      // Notify peer
+
       if (socket.deviceId) {
-        const pairedDevice = store.getPairedDevice(socket.deviceId);
-        if (pairedDevice && pairedDevice.socketId) {
-          io.to(pairedDevice.socketId).emit('peer-disconnected', {
-            deviceId: socket.deviceId,
-            deviceType: socket.deviceType,
-            timestamp: Date.now()
-          });
-        }
-        
         const device = store.getPairedDevice(socket.deviceId);
         if (device) {
+          // Notify the other peer
+          if (device.roomId) {
+            socket.to(device.roomId).emit('peer-disconnected', {
+              deviceId: socket.deviceId,
+              deviceType: socket.deviceType,
+              timestamp: Date.now()
+            });
+          }
+
+          // CHANGE: Instead of just setting isConnected to false, 
+          // check if you want to keep the session alive.
+          // If you want to force a fresh pair every time:
+          // store.deleteSession(socket.deviceId, device.roomId); 
+
           device.socketId = null;
-          device.lastSeen = Date.now();
           device.isConnected = false;
+          device.lastSeen = Date.now();
         }
       }
     });
+    // Inside setupSocketHandlers, add this listener:
+    socket.on('manual-disconnect', ({ deviceId, roomId }) => {
+      // 1. Wipe the Map entries
+      store.deleteSession(deviceId, roomId);
+
+      // 2. Notify the other peer (if they are still connected)
+      if (roomId) {
+        socket.to(roomId).emit('peer-disconnected');
+        socket.leave(roomId);
+      }
+    });
   });
-  
+
   async function sendInitialData(socket, roomId) {
     if (!roomId) return;
-    
+
     // Send clipboard data if exists
     const clipboard = store.getClipboard(roomId);
     if (clipboard) {
       socket.emit('clipboard-sync', clipboard);
       console.log(`[INIT] Sent clipboard data to ${socket.id}`);
     }
-    
+
     // Send stream info
     const stream = store.getStream(roomId);
     if (stream && stream.status === 'active') {
@@ -112,13 +127,13 @@ export function setupSocketHandlers(io) {
         config: stream.config
       });
     }
-    
+
     // Send notification settings
     const notificationSettings = store.getNotificationSettings(roomId);
     if (notificationSettings) {
       socket.emit('notification-settings', notificationSettings);
     }
-    
+
     // Send recent notifications
     const notifications = store.getNotificationHistory(roomId);
     if (notifications && notifications.length > 0) {
