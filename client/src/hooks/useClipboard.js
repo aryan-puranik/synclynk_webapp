@@ -12,6 +12,9 @@ export const useClipboard = () => {
   const lastSyncedRef = useRef('');
   const intervalRef = useRef(null);
   const lastReceivedRef = useRef('');
+  // Track last synced image as a hash/size string to avoid re-sending same image
+  const lastSyncedImageRef = useRef('');
+  const lastReceivedImageRef = useRef('');
 
   // Debug logging
   useEffect(() => {
@@ -31,6 +34,12 @@ export const useClipboard = () => {
         lastReceivedRef.current = incoming;
         lastSyncedRef.current = incoming;
       }
+
+      if (data.type === 'image') {
+        const incoming = data.fullContent || data.content;
+        lastReceivedImageRef.current = incoming;
+        lastSyncedImageRef.current = incoming;
+      }
     };
 
     const handleHistoryResponse = (history) => {
@@ -49,6 +58,12 @@ export const useClipboard = () => {
           lastReceivedRef.current = incoming;
           lastSyncedRef.current = incoming;
         }
+
+        if (data.type === 'image') {
+          const incoming = data.fullContent || data.content;
+          lastReceivedImageRef.current = incoming;
+          lastSyncedImageRef.current = incoming;
+        }
       }
     };
 
@@ -65,38 +80,75 @@ export const useClipboard = () => {
     };
   }, [socket]);
 
-  // Check clipboard permission
+  // Check clipboard permission (text + image)
   const checkPermission = useCallback(async () => {
     try {
-      await navigator.clipboard.readText();
+      // Try reading clipboard items (covers both text and image)
+      await navigator.clipboard.read();
       setPermissionGranted(true);
       return true;
     } catch (error) {
-      setPermissionGranted(false);
-      return false;
+      // Fallback: try text-only read
+      try {
+        await navigator.clipboard.readText();
+        setPermissionGranted(true);
+        return true;
+      } catch {
+        setPermissionGranted(false);
+        return false;
+      }
     }
   }, []);
 
   // Request permission
   const requestPermission = useCallback(async () => {
     try {
-      await navigator.clipboard.readText();
+      await navigator.clipboard.read();
       setPermissionGranted(true);
       toast.success('Clipboard permission granted');
       return true;
     } catch (error) {
-      toast.error('Please allow clipboard permission for auto-sync');
-      return false;
+      try {
+        await navigator.clipboard.readText();
+        setPermissionGranted(true);
+        toast.success('Clipboard permission granted');
+        return true;
+      } catch {
+        toast.error('Please allow clipboard permission for auto-sync');
+        return false;
+      }
     }
   }, []);
 
-  // Read from system clipboard
+  // Read from system clipboard (text)
   const readFromSystemClipboard = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
       return text || '';
     } catch (error) {
       console.error('Failed to read from system clipboard:', error);
+      return null;
+    }
+  }, []);
+
+  // Read image from system clipboard, returns base64 data URL or null
+  const readImageFromSystemClipboard = useCallback(async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find(t => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve({ dataUrl: e.target.result, size: blob.size, mimeType: imageType });
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+      return null;
+    } catch {
       return null;
     }
   }, []);
@@ -109,47 +161,119 @@ export const useClipboard = () => {
     }
   }, []);
 
-  // Start clipboard monitoring
-const startMonitoring = useCallback(() => {
-  if (!roomId || !isConnected || !socket || intervalRef.current) return;
+  // Start clipboard monitoring (text + image)
+  const startMonitoring = useCallback(() => {
+    if (!roomId || !isConnected || !socket || intervalRef.current) return;
 
-  intervalRef.current = setInterval(async () => {
-    // Only attempt read if the window is active to prevent NotAllowedError
-    if (!document.hasFocus()) return; 
+    intervalRef.current = setInterval(async () => {
+      // Only attempt read if the window is active to prevent NotAllowedError
+      if (!document.hasFocus()) return;
 
-    try {
-      const clipboardText = await navigator.clipboard.readText();
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        let handledImage = false;
 
-      // Check if content is actually different from our tracking refs
-      if (
-        clipboardText && 
-        clipboardText !== lastSyncedRef.current && 
-        clipboardText !== lastReceivedRef.current
-      ) {
-        console.log('✨ Auto-syncing new local content');
-        lastSyncedRef.current = clipboardText; // Update tracking immediately
+        for (const item of clipboardItems) {
+          // --- Image detection ---
+          const imageType = item.types.find(t => t.startsWith('image/'));
+          if (imageType) {
+            handledImage = true;
+            const blob = await item.getType(imageType);
+            const dataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve(e.target.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
 
-        socket.emit('clipboard-update', {
-          roomId,
-          type: 'text',
-          content: clipboardText
-        });
+            if (
+              dataUrl &&
+              dataUrl !== lastSyncedImageRef.current &&
+              dataUrl !== lastReceivedImageRef.current
+            ) {
+              console.log('🖼️ Auto-syncing new clipboard image');
+              lastSyncedImageRef.current = dataUrl;
 
-        setClipboard({
-          type: 'text',
-          content: clipboardText,
-          fullContent: clipboardText,
-          timestamp: Date.now()
-        });
+              socket.emit('clipboard-update', {
+                roomId,
+                type: 'image',
+                content: dataUrl,
+                size: blob.size,
+                mimeType: imageType,
+              });
+
+              setClipboard({
+                type: 'image',
+                content: dataUrl,
+                fullContent: dataUrl,
+                size: blob.size,
+                timestamp: Date.now(),
+              });
+            }
+            break; // Only process first image
+          }
+
+          // --- Text detection (only if no image found) ---
+          if (!handledImage && item.types.includes('text/plain')) {
+            const blob = await item.getType('text/plain');
+            const clipboardText = await blob.text();
+
+            if (
+              clipboardText &&
+              clipboardText !== lastSyncedRef.current &&
+              clipboardText !== lastReceivedRef.current
+            ) {
+              console.log('✨ Auto-syncing new local content');
+              lastSyncedRef.current = clipboardText;
+
+              socket.emit('clipboard-update', {
+                roomId,
+                type: 'text',
+                content: clipboardText,
+              });
+
+              setClipboard({
+                type: 'text',
+                content: clipboardText,
+                fullContent: clipboardText,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        }
+      } catch (error) {
+        // Fallback to text-only read if clipboard.read() is unavailable
+        if (error.name !== 'NotAllowedError') {
+          try {
+            const clipboardText = await navigator.clipboard.readText();
+            if (
+              clipboardText &&
+              clipboardText !== lastSyncedRef.current &&
+              clipboardText !== lastReceivedRef.current
+            ) {
+              console.log('✨ Auto-syncing new local content (text fallback)');
+              lastSyncedRef.current = clipboardText;
+
+              socket.emit('clipboard-update', {
+                roomId,
+                type: 'text',
+                content: clipboardText,
+              });
+
+              setClipboard({
+                type: 'text',
+                content: clipboardText,
+                fullContent: clipboardText,
+                timestamp: Date.now(),
+              });
+            }
+          } catch {
+            // Silently ignore focus-related errors
+          }
+        }
       }
-    } catch (error) {
-      // Ignore focus-related errors instead of killing the monitor
-      if (error.name !== 'NotAllowedError') {
-        console.error('Monitor read error:', error);
-      }
-    }
-  }, 2000);
-}, [roomId, isConnected, socket]);
+    }, 2000);
+  }, [roomId, isConnected, socket]);
 
   // Automatically start monitoring when connected and permissions are available
   useEffect(() => {
@@ -172,20 +296,26 @@ const startMonitoring = useCallback(() => {
   }, [roomId, isConnected, socket, checkPermission, startMonitoring, stopMonitoring]);
 
   // Update clipboard (send to other devices)
-  const updateClipboard = useCallback(async (type, content) => {
+  const updateClipboard = useCallback(async (type, content, meta = {}) => {
     if (!roomId || !socket) {
       toast.error('Not connected to any device');
       return false;
     }
 
     try {
-      console.log('📤 Sending clipboard update:', { type, content: content.substring(0, 50) });
-      socket.emit('clipboard-update', { roomId, type, content });
+      console.log('📤 Sending clipboard update:', { type, contentLength: content?.length });
+      socket.emit('clipboard-update', { roomId, type, content, ...meta });
 
       if (type === 'text') {
         lastSyncedRef.current = content;
         setClipboard({ type, content, fullContent: content, timestamp: Date.now() });
       }
+
+      if (type === 'image') {
+        lastSyncedImageRef.current = content;
+        setClipboard({ type, content, fullContent: content, timestamp: Date.now(), ...meta });
+      }
+
       return true;
     } catch (error) {
       console.error('Update clipboard error:', error);
@@ -211,7 +341,6 @@ const startMonitoring = useCallback(() => {
     if (!roomId || !socket) return;
     setIsLoading(true);
     socket.emit('clipboard-history', { roomId, limit });
-    // History will come back via socket event
     setTimeout(() => setIsLoading(false), 3000);
   }, [roomId, socket]);
 
@@ -221,7 +350,7 @@ const startMonitoring = useCallback(() => {
     socket.emit('clipboard-clear', { roomId });
   }, [roomId, socket]);
 
-  // Copy to system clipboard
+  // Copy text to system clipboard
   const copyToSystemClipboard = useCallback(async (text) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -246,6 +375,7 @@ const startMonitoring = useCallback(() => {
     copyToSystemClipboard,
     checkPermission,
     requestPermission,
-    readFromSystemClipboard
+    readFromSystemClipboard,
+    readImageFromSystemClipboard,
   };
 };

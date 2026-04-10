@@ -161,6 +161,25 @@ class InMemoryStore {
     return this.delayedNotifications.get(roomId) || [];
   }
 
+deleteSession(deviceId, roomId) {
+  // 1. Identify and remove both devices in the pair
+  const device = this.pairedDevices.get(deviceId);
+  if (device && device.pairedWith) {
+    this.pairedDevices.delete(device.pairedWith);
+  }
+  this.pairedDevices.delete(deviceId);
+
+  // 2. Clear all room-specific data
+  if (roomId) {
+    this.clipboardData.delete(roomId);
+    this.clipboardHistory.delete(roomId);
+    this.activeStreams.delete(roomId);
+    this.notificationSettings.delete(roomId);
+    this.notificationHistory.delete(roomId);
+    this.delayedNotifications.delete(roomId);
+  }
+  console.log(`[STORE] Session destroyed for device ${deviceId} and room ${roomId}`);
+}
   // Cleanup
   cleanup() {
     const now = Date.now();
