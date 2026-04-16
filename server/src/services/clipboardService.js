@@ -18,7 +18,7 @@ class ClipboardService {
     if (currentClipboard && 
         currentClipboard.type === type && 
         currentClipboard.fullContent === content) {
-      console.log(`[CLIPBOARD SERVICE] Ignoring duplicate content for room ${roomId}`);
+      // console.log(`[CLIPBOARD SERVICE] Ignoring duplicate content for room ${roomId}`);
       return currentClipboard; // Return existing data instead of creating a new one
     }
 
@@ -40,7 +40,7 @@ class ClipboardService {
       
       const history = [...(store.getClipboardHistory(roomId) || [])];
       
-      console.log(`[CLIPBOARD SERVICE] Updated in room ${roomId}: ${type} - ${clipboardData.id}`);
+      // console.log(`[CLIPBOARD SERVICE] Updated in room ${roomId}: ${type} - ${clipboardData.id}`);
 
       // Final safety check: Ensure this specific content isn't already the first item
     if (history.length === 0 || history[0].fullContent !== content) {
@@ -102,7 +102,7 @@ class ClipboardService {
   async clearClipboard(roomId) {
     try {
       store.clearClipboard(roomId);
-      console.log(`[CLIPBOARD SERVICE] Cleared clipboard for room ${roomId}`);
+      // console.log(`[CLIPBOARD SERVICE] Cleared clipboard for room ${roomId}`);
       return { success: true };
     } catch (error) {
       console.error('[CLIPBOARD SERVICE] Clear error:', error);

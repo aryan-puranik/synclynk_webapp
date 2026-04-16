@@ -106,7 +106,7 @@ const ImageClipboard = () => {
             mimeType: file.type,
             name: file.name,
           });
-          toast.success('Image synced to mobile 🔄');
+          // toast.success('Image synced to mobile 🔄');
         };
         reader.readAsDataURL(file);
       });
@@ -130,7 +130,7 @@ const ImageClipboard = () => {
           const blob = await item.getType(imageType);
           const dataUrl = await blobToDataUrl(blob);
           addAndSync(dataUrl, { size: blob.size, mimeType: imageType, name: 'pasted-image' });
-          toast.success('Image pasted and synced to mobile 🔄');
+          // toast.success('Image pasted and synced to mobile 🔄');
           break;
         }
       }
@@ -163,7 +163,7 @@ const ImageClipboard = () => {
             const blob = await item.getType(imageType);
             const dataUrl = await blobToDataUrl(blob);
             addAndSync(dataUrl, { size: blob.size, mimeType: imageType, name: 'pasted-image' });
-            toast.success('Image pasted and synced to mobile 🔄');
+            // toast.success('Image pasted and synced to mobile 🔄');
             break;
           }
         }
@@ -186,7 +186,7 @@ const ImageClipboard = () => {
       });
       if (ok) {
         setSyncedId(image.id);
-        toast.success('Image re-synced to mobile');
+        // toast.success('Image re-synced to mobile');
         setTimeout(() => setSyncedId(null), 2000);
       }
     },
@@ -197,7 +197,7 @@ const ImageClipboard = () => {
 
   const handleDelete = useCallback((id) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
-    toast.success('Image removed');
+    // toast.success('Image removed');
   }, []);
 
   // ── download ──────────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ const ImageClipboard = () => {
     link.href = image.data;
     link.download = image.name || `clipboard-image-${Date.now()}.png`;
     link.click();
-    toast.success('Downloaded');
+    // toast.success('Downloaded');
   }, []);
 
   // ─── render ───────────────────────────────────────────────────────────────
