@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { FiCopy, FiCheck, FiDownload, FiMaximize2, FiMinimize2, FiZap, FiShield } from 'react-icons/fi';
-import toast from 'react-hot-toast';
 import { useClipboard } from '../../hooks/useClipboard';
 
 const TextClipboard = () => {

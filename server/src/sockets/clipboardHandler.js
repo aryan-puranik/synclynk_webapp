@@ -21,7 +21,7 @@ export default function(socket, io, getRoomId) {
     if (!existing || existing.id !== clipboardData.id) {
       socket.to(roomId).emit('clipboard-sync', clipboardData);
       socket.emit('clipboard-updated', { success: true, data: clipboardData });
-      console.log(`[CLIPBOARD HANDLER] New content in room ${roomId} from ${socket.deviceType}`);
+      // console.log(`[CLIPBOARD HANDLER] New content in room ${roomId} from ${socket.deviceType}`);
     } else {
       // Quietly acknowledge to the sender without broadcasting to everyone
       socket.emit('clipboard-updated', { success: true, data: clipboardData, isDuplicate: true });
@@ -43,7 +43,7 @@ export default function(socket, io, getRoomId) {
       const clipboard = await clipboardService.getClipboard(roomId);
       if (clipboard) {
         socket.emit('clipboard-sync', clipboard);
-        console.log(`[CLIPBOARD HANDLER] Requested by ${socket.deviceType} - sent latest`);
+        // console.log(`[CLIPBOARD HANDLER] Requested by ${socket.deviceType} - sent latest`);
       } else {
         socket.emit('clipboard-empty');
         console.log(`[CLIPBOARD HANDLER] Requested by ${socket.deviceType} - none available`);
@@ -82,7 +82,7 @@ export default function(socket, io, getRoomId) {
       await clipboardService.clearClipboard(roomId);
       socket.to(roomId).emit('clipboard-cleared');
       socket.emit('clipboard-cleared');
-      console.log(`[CLIPBOARD HANDLER] Cleared in room ${roomId}`);
+      // console.log(`[CLIPBOARD HANDLER] Cleared in room ${roomId}`);
     } catch (error) {
       console.error('[CLIPBOARD HANDLER] Clear error:', error);
       socket.emit('clipboard-error', { message: 'Failed to clear clipboard' });
